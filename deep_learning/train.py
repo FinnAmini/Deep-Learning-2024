@@ -1,4 +1,3 @@
-from tensorflow.keras.layers import GlobalAveragePooling2D, Flatten
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import os
@@ -7,6 +6,7 @@ import json
 import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
+from tensorflow.keras.layers import Flatten
 
 
 def load_dataset_from_directory(
@@ -136,11 +136,8 @@ def build_model(
             layer.trainable = False
 
     x = base_model.output
-
-    if len(output_layers) > 1:
-        x = GlobalAveragePooling2D()(x)
-
     x = Flatten()(x)
+
     for layer in top_layers:
         x = layer(x)
 
@@ -154,7 +151,6 @@ def load_data(path, batch_size=32):
         rescale=1.0 / 255.0,
         validation_split=0.2,
     )
-    test_datagen = ImageDataGenerator(rescale=1.0 / 255.0)
 
     train_ds = train_datagen.flow_from_directory(
         path,
