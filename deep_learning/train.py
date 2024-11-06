@@ -1,12 +1,12 @@
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import os
-import tensorflow.keras.preprocessing.image as keras_image
 import json
 import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.layers import Flatten
+
 
 def load_dataset_from_directory(
     directory,
@@ -106,19 +106,23 @@ def load_dataset_from_directory(
         )
 
         train_dataset = train_dataset.map(
-            load_and_preprocess_image_multi_task, num_parallel_calls=tf.data.experimental.AUTOTUNE
+            load_and_preprocess_image_multi_task,
+            num_parallel_calls=tf.data.experimental.AUTOTUNE,
         )
         val_dataset = val_dataset.map(
-            load_and_preprocess_image_multi_task, num_parallel_calls=tf.data.experimental.AUTOTUNE
+            load_and_preprocess_image_multi_task,
+            num_parallel_calls=tf.data.experimental.AUTOTUNE,
         )
     else:
         # Split into training and test datasets
-        train_file_paths, val_file_paths, train_img_labels, val_img_labels = train_test_split(
-            file_paths,
-            img_labels,
-            test_size=val_split,
-            shuffle=shuffle,
-            random_state=random_state,
+        train_file_paths, val_file_paths, train_img_labels, val_img_labels = (
+            train_test_split(
+                file_paths,
+                img_labels,
+                test_size=val_split,
+                shuffle=shuffle,
+                random_state=random_state,
+            )
         )
 
         train_dataset = tf.data.Dataset.from_tensor_slices(
@@ -144,6 +148,7 @@ def load_dataset_from_directory(
     val_dataset = val_dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     return train_dataset, val_dataset
+
 
 def build_model(
     model_arch, input_shape, top_layers=[], output_layers=[], freeze=True

@@ -2,6 +2,9 @@ from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.applications as keras_app
 from train import build_model, load_dataset_from_directory
 from tensorflow.keras.layers import Dense, Dropout
+import os
+
+os.makedirs("models/mt", exist_ok=True)
 
 MODEL_ARCHS = {
     "resnet50": keras_app.ResNet50,
@@ -37,5 +40,5 @@ for freeze in [True, False]:
             },
         )
 
-        model.fit(train_ds, epochs=5, validation_data=val_ds)
-        model.save(f"models/{model_name}.keras")
+        model.fit(train_ds, epochs=50, validation_data=val_ds)
+        model.save(f"models/mt/{model_name}.keras")
