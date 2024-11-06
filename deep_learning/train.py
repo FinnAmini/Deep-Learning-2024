@@ -154,6 +154,7 @@ def load_data(path, batch_size=32):
         rescale=1.0 / 255.0,
         validation_split=0.2,
     )
+    test_datagen = ImageDataGenerator(rescale=1.0 / 255.0)
 
     train_ds = train_datagen.flow_from_directory(
         path,

@@ -2,6 +2,8 @@ from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.applications as keras_app
 from train import build_model, load_data
 from tensorflow.keras.layers import Dense, Dropout
+import tensorflow as tf
+import datetime
 
 MODEL_ARCHS = {
     "resnet18": keras_app.ResNet18,  # 11,7M Params
@@ -26,5 +28,14 @@ for freeze in [True, False]:
             metrics=["accuracy"],
         )
 
-model.fit(train_ds, epochs=50, validation_data=val_ds)
+log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+model.fit(
+    train_ds,
+    epochs=50,
+    validation_data=val_ds,
+    callbacks=[tensorboard_callback],
+)
+
 model.save(f"models/{model_name}.keras")
