@@ -26,8 +26,6 @@ def load_dataset_from_directory(
         img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
         img = tf.image.resize(img, image_size)
         img = img / 255.0
-        print(img.shape)
-        exit()
         if multi_task:
             return img, (label, age_label, gender_label)
         return img, label
@@ -61,8 +59,12 @@ def load_dataset_from_directory(
                     img_labels.append(label)
 
                     if multi_task:
-                        json_file_path = os.path.join(label_directory, file.name.replace(file_ext, "json"))
-                        if os.path.exists(json_file_path) and os.path.isfile(json_file_path):
+                        json_file_path = os.path.join(
+                            label_directory, file.name.replace(file_ext, "json")
+                        )
+                        if os.path.exists(json_file_path) and os.path.isfile(
+                            json_file_path
+                        ):
                             with open(json_file_path) as json_file:
                                 json_data = json.load(json_file)
                                 age_labels.append(json_data[0]["faceAttributes"]["age"])
@@ -78,7 +80,7 @@ def load_dataset_from_directory(
     if multi_task:
         age_labels = np.array(age_labels)
         gender_labels = np.array(gender_labels)
-        
+
         # # Normalize age labels
         # age_labels = (age_labels - age_labels.min()) / (age_labels.max() - age_labels.min())
 
@@ -220,31 +222,35 @@ def load_data(path, batch_size=32):
     return train_ds, val_ds
 
 
+# def multi_task_loss(y_true, y_pred):
+#     face_detection_loss = tf.keras.losses.binary_crossentropy(y_true[0], y_pred[0])
+#     age_prediction_loss = tf.keras.losses.mean_squared_error(y_true[1], y_pred[1])
+#     gender_classification_loss = tf.keras.losses.binary_crossentropy(
+#         y_true[2], y_pred[2]
+#     )
+#     return face_detection_loss + age_prediction_loss + gender_classification_loss
+
+
 def multi_task_loss(y_true, y_pred):
-    face_detection_true = y_true["face_detection"]
-    face_detection_pred = y_pred["face_detection"]
-    age_true = y_true["age_prediction"]
-    age_pred = y_pred["age_prediction"]
-    gender_true = y_true["gender_classification"]
-    gender_pred = y_pred["gender_classification"]
+    face_detection_true = y_true[0]  # Annahme: 1. Spalte für Gesichtserkennung
+    face_detection_pred = y_pred[0]
+    age_true = y_true[1]  # Annahme: 2. Spalte für Alter
+    age_pred = y_pred[1]
+    gender_true = y_true[2]  # Annahme: 3. Spalte für Geschlecht
+    gender_pred = y_pred[2]
 
     face_detection_loss = tf.keras.losses.binary_crossentropy(
         face_detection_true, face_detection_pred
     )
 
-    # Maskiere die Verluste für Alter und Geschlecht basierend auf dem Ergebnis der Gesichtserkennung
-    mask = 0 if face_detection_true == 1 else 1
+    mask = tf.cast(tf.cast(face_detection_true, tf.float32) > 0.5, tf.float32)
 
     age_loss = tf.keras.losses.mean_squared_error(age_true, age_pred) * mask
     gender_loss = tf.keras.losses.binary_crossentropy(gender_true, gender_pred) * mask
-
-    print(face_detection_true, mask, face_detection_loss, age_loss, gender_loss)
 
     total_loss = (
         tf.reduce_mean(face_detection_loss)
         + tf.reduce_mean(age_loss)
         + tf.reduce_mean(gender_loss)
     )
-    print(total_loss)
-    exit()
     return total_loss

@@ -1,6 +1,6 @@
 from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.applications as keras_app
-from train import build_model, load_dataset_from_directory
+from train import build_model, load_dataset_from_directory, multi_task_loss
 from tensorflow.keras.layers import Dense, Dropout
 import os
 
@@ -14,7 +14,7 @@ MODEL_ARCHS = {
 
 
 train_ds, val_ds = load_dataset_from_directory(
-    "data/training", "data/labels/train", batch_size=64, multi_task=True
+    "data_test", "data_test_labels", batch_size=64, multi_task=True
 )
 
 for arch_name, arch in MODEL_ARCHS.items():
@@ -29,11 +29,7 @@ for arch_name, arch in MODEL_ARCHS.items():
         model = build_model(arch, (224, 224, 3), top_layers, output_layers, freeze)
         model.compile(
             optimizer=Adam(learning_rate=0.0001),
-            loss={
-                "face_detection": "binary_crossentropy",
-                "age_prediction": "mean_squared_error",
-                "gender_classification": "binary_crossentropy",
-            },
+            loss=multi_task_loss,
             metrics={
                 "face_detection": "accuracy",
                 "age_prediction": "mae",
@@ -41,5 +37,5 @@ for arch_name, arch in MODEL_ARCHS.items():
             },
         )
 
-        model.fit(train_ds, epochs=50, validation_data=val_ds)
+        model.fit(train_ds, epochs=10, validation_data=val_ds)
         model.save(f"models/mt/{model_name}.keras")
