@@ -43,41 +43,6 @@ top_layer_confs = [
     ),
 ]
 
-top_layer_confs = [
-    (
-        [
-            Dense(256, activation="relu", name="dense1.1"),
-            Dropout(0.3),
-        ],
-        [Dense(1, activation="sigmoid", name="output1")],
-    ),
-    (
-        [
-            Dense(256, activation="relu", name="dense2.1"),
-            Dropout(0.3),
-            Dense(256, activation="relu", name="dense2.2"),
-            Dropout(0.3),
-        ],
-        [Dense(1, activation="sigmoid", name="output2")],
-    ),
-    (
-        [
-            Dense(128, activation="relu", name="dense3.1"),
-            Dropout(0.3),
-        ],
-        [Dense(1, activation="sigmoid", name="output3")],
-    ),
-    (
-        [
-            Dense(128, activation="relu", name="dense4.1"),
-            Dropout(0.3),
-            Dense(128, activation="relu", name="dense4.2"),
-            Dropout(0.3),
-        ],
-        [Dense(1, activation="sigmoid", name="output4")],
-    ),
-]
-
 MODEL_ARCHS = {
     "resnet50": keras_app.ResNet50,  # 25,6M Params
     "resnet101": keras_app.ResNet101,  # 44,6M Params

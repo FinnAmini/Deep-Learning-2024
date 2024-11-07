@@ -18,21 +18,25 @@ def load_dataset_from_directory(
     random_state=42,
     multi_task=True,
 ):
-    def parse_image(file_path, label, age_label=None, gender_label=None):
+    def parse_image(
+        file_path, label, age_label=None, gender_label=None, multi_task=False
+    ):
         img = tf.io.read_file(file_path)
         img = tf.image.decode_image(img, channels=3)
         img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
         img = tf.image.resize(img, image_size)
         img = img / 255.0
+        print(img.shape)
+        exit()
         if multi_task:
             return img, (label, age_label, gender_label)
         return img, label
 
     def load_and_preprocess_image(file_path, label):
-        return parse_image(file_path, label)
+        return parse_image(file_path, label, multi_task=False)
 
     def load_and_preprocess_image_multi_task(file_path, label, age_label, gender_label):
-        return parse_image(file_path, label, age_label, gender_label)
+        return parse_image(file_path, label, age_label, gender_label, True)
 
     # List all subdirectories (class labels)
     class_names = sorted(os.listdir(directory))
@@ -214,3 +218,33 @@ def load_data(path, batch_size=32):
     )
 
     return train_ds, val_ds
+
+
+def multi_task_loss(y_true, y_pred):
+    face_detection_true = y_true["face_detection"]
+    face_detection_pred = y_pred["face_detection"]
+    age_true = y_true["age_prediction"]
+    age_pred = y_pred["age_prediction"]
+    gender_true = y_true["gender_classification"]
+    gender_pred = y_pred["gender_classification"]
+
+    face_detection_loss = tf.keras.losses.binary_crossentropy(
+        face_detection_true, face_detection_pred
+    )
+
+    # Maskiere die Verluste für Alter und Geschlecht basierend auf dem Ergebnis der Gesichtserkennung
+    mask = 0 if face_detection_true == 1 else 1
+
+    age_loss = tf.keras.losses.mean_squared_error(age_true, age_pred) * mask
+    gender_loss = tf.keras.losses.binary_crossentropy(gender_true, gender_pred) * mask
+
+    print(face_detection_true, mask, face_detection_loss, age_loss, gender_loss)
+
+    total_loss = (
+        tf.reduce_mean(face_detection_loss)
+        + tf.reduce_mean(age_loss)
+        + tf.reduce_mean(gender_loss)
+    )
+    print(total_loss)
+    exit()
+    return total_loss

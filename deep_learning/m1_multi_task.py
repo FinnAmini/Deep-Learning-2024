@@ -12,19 +12,20 @@ MODEL_ARCHS = {
     # "resnet152": keras_app.ResNet152,
 }
 
-top_layers = [Dense(256, activation="relu"), Dropout(0.3)]
-output_layers = [
-    Dense(1, activation="sigmoid", name="face_detection"),
-    Dense(1, activation="linear", name="age_prediction"),
-    Dense(1, activation="sigmoid", name="gender_classification"),
-]
+
 train_ds, val_ds = load_dataset_from_directory(
     "data/training", "data/labels/train", batch_size=64, multi_task=True
 )
 
-for freeze in [True, False]:
-    for arch_name, arch in MODEL_ARCHS.items():
-        model_name = f"st_{arch_name}_adam_lr=0.0001_lc1_freeze={freeze}"
+for arch_name, arch in MODEL_ARCHS.items():
+    for freeze in [True, False]:
+        top_layers = [Dense(256, activation="relu"), Dropout(0.3)]
+        output_layers = [
+            Dense(1, activation="sigmoid", name="face_detection"),
+            Dense(1, activation="linear", name="age_prediction"),
+            Dense(1, activation="sigmoid", name="gender_classification"),
+        ]
+        model_name = f"mt_{arch_name}_adam_lr=0.0001_lc=0_freeze={freeze}"
         model = build_model(arch, (224, 224, 3), top_layers, output_layers, freeze)
         model.compile(
             optimizer=Adam(learning_rate=0.0001),
