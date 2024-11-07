@@ -10,6 +10,7 @@ from tensorflow.keras.layers import Flatten
 
 def load_dataset_from_directory(
     directory,
+    label_directory,
     image_size=(224, 224),
     batch_size=32,
     val_split=0.2,
@@ -20,7 +21,7 @@ def load_dataset_from_directory(
     def parse_image(file_path, label, age_label=None, gender_label=None):
         img = tf.io.read_file(file_path)
         img = tf.image.decode_image(img, channels=3)
-        # img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
+        img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
         img = tf.image.resize(img, image_size)
         img = img / 255.0
         if multi_task:
@@ -56,10 +57,8 @@ def load_dataset_from_directory(
                     img_labels.append(label)
 
                     if multi_task:
-                        json_file_path = file.path.replace(file_ext, "json")
-                        if os.path.exists(json_file_path) and os.path.isfile(
-                            json_file_path
-                        ):
+                        json_file_path = os.path.join(label_directory, file.name.replace(file_ext, "json"))
+                        if os.path.exists(json_file_path) and os.path.isfile(json_file_path):
                             with open(json_file_path) as json_file:
                                 json_data = json.load(json_file)
                                 age_labels.append(json_data[0]["faceAttributes"]["age"])
@@ -75,7 +74,7 @@ def load_dataset_from_directory(
     if multi_task:
         age_labels = np.array(age_labels)
         gender_labels = np.array(gender_labels)
-
+        
         # # Normalize age labels
         # age_labels = (age_labels - age_labels.min()) / (age_labels.max() - age_labels.min())
 

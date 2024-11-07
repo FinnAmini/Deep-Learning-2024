@@ -16,12 +16,8 @@ output_layers = [
     Dense(1, activation="sigmoid", name="gender_classification"),
 ]
 train_ds, val_ds = load_dataset_from_directory(
-    "data/training", batch_size=64, multi_task=True
+    "data/training", "data/labels/train", batch_size=64, multi_task=True
 )
-# images = ...  # shape (num_samples, 224, 224, 3)
-# face_labels = ...  # shape (num_samples, 1) with binary labels 0 or 1
-# age_labels = ...  # shape (num_samples, 1) with ages in years
-# gender_labels = ...  # shape (num_samples, 1) with binary labels 0 (female) or 1 (male)
 
 for freeze in [True, False]:
     for arch_name, arch in MODEL_ARCHS.items():
