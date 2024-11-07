@@ -3,7 +3,7 @@ import tensorflow.keras.applications as keras_app
 from train import build_model, load_dataset_from_directory, multi_task_loss
 from tensorflow.keras.layers import Dense, Dropout
 import os
-import tf
+import tensorflow as tf
 import datetime
 
 os.makedirs("models/mt", exist_ok=True)

@@ -236,7 +236,7 @@ def multi_task_loss(y_true, y_pred):
 
     mask = tf.cast(tf.cast(face_detection_true, tf.float32) > 0.5, tf.float32)
 
-    age_loss = tf.keras.losses.mean_squared_error(age_true, age_pred) * mask
+    age_loss = tf.keras.losses.MeanSquaredError()(age_true, age_pred) * mask
     gender_loss = tf.keras.losses.binary_crossentropy(gender_true, gender_pred) * mask
 
     total_loss = (

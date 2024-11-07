@@ -77,7 +77,7 @@ for arch_name, arch in MODEL_ARCHS.items():
 
             model.fit(
                 train_ds,
-                epochs=50,
+                epochs=10,
                 validation_data=val_ds,
                 callbacks=[tensorboard_train_callback, tensorboard_val_callback],
             )
