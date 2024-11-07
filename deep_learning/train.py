@@ -8,7 +8,6 @@ from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.layers import Flatten
 
-
 def load_dataset_from_directory(
     directory,
     image_size=(224, 224),
@@ -16,13 +15,29 @@ def load_dataset_from_directory(
     val_split=0.2,
     shuffle=True,
     random_state=42,
-    multi_task=False,
+    multi_task=True,
 ):
+    def parse_image(file_path, label, age_label=None, gender_label=None):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_image(img, channels=3)
+        # img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
+        img = tf.image.resize(img, image_size)
+        img = img / 255.0
+        if multi_task:
+            return img, (label, age_label, gender_label)
+        return img, label
+
+    def load_and_preprocess_image(file_path, label):
+        return parse_image(file_path, label)
+
+    def load_and_preprocess_image_multi_task(file_path, label, age_label, gender_label):
+        return parse_image(file_path, label, age_label, gender_label)
+
     # List all subdirectories (class labels)
     class_names = sorted(os.listdir(directory))
 
-    # Initialize lists to store image data and labels
-    images = []
+    # Initialize lists to store file paths and labels
+    file_paths = []
     img_labels = []
 
     if multi_task:
@@ -37,9 +52,7 @@ def load_dataset_from_directory(
             for file in os.scandir(class_folder):
                 file_ext = file.name.split(".")[-1]
                 if file_ext == "png" or file_ext == "jpg":
-                    img = keras_image.load_img(file.path, target_size=image_size)
-                    img_array = keras_image.img_to_array(img)
-                    images.append(img_array)
+                    file_paths.append(file.path)
                     img_labels.append(label)
 
                     if multi_task:
@@ -53,52 +66,75 @@ def load_dataset_from_directory(
                                 gender = json_data[0]["faceAttributes"]["gender"]
                                 gender_labels.append(0 if gender == "male" else 1)
                         else:
-                            age_labels.append(-1)
-                            gender_labels.append(-1)
+                            age_labels.append(0)  # Default to 0 if no data
+                            gender_labels.append(0)  # Default to 0 if no data
 
-    # Convert images and labels to numpy arrays
-    images = np.array(images)
+    # Convert labels to numpy arrays
     img_labels = np.array(img_labels)
-
-    # Normalize images to the range [0, 1]
-    images = images.astype("float32") / 255.0
 
     if multi_task:
         age_labels = np.array(age_labels)
         gender_labels = np.array(gender_labels)
 
+        # # Normalize age labels
+        # age_labels = (age_labels - age_labels.min()) / (age_labels.max() - age_labels.min())
+
         # Split into training and test datasets
-        x_train, x_val, y_train, y_val, age_train, age_val, gender_train, gender_val = (
-            train_test_split(
-                images,
-                img_labels,
-                age_labels,
-                gender_labels,
-                test_size=val_split,
-                shuffle=shuffle,
-                random_state=random_state,
-            )
+        (
+            train_file_paths,
+            val_file_paths,
+            train_img_labels,
+            val_img_labels,
+            train_age_labels,
+            val_age_labels,
+            train_gender_labels,
+            val_gender_labels,
+        ) = train_test_split(
+            file_paths,
+            img_labels,
+            age_labels,
+            gender_labels,
+            test_size=val_split,
+            shuffle=shuffle,
+            random_state=random_state,
         )
 
         train_dataset = tf.data.Dataset.from_tensor_slices(
-            ((x_train,), (y_train, age_train, gender_train))
+            (train_file_paths, train_img_labels, train_age_labels, train_gender_labels)
         )
         val_dataset = tf.data.Dataset.from_tensor_slices(
-            ((x_val,), (y_val, age_val, gender_val))
+            (val_file_paths, val_img_labels, val_age_labels, val_gender_labels)
+        )
+
+        train_dataset = train_dataset.map(
+            load_and_preprocess_image_multi_task, num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
+        val_dataset = val_dataset.map(
+            load_and_preprocess_image_multi_task, num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
     else:
         # Split into training and test datasets
-        x_train, x_val, y_train, y_val = train_test_split(
-            images,
+        train_file_paths, val_file_paths, train_img_labels, val_img_labels = train_test_split(
+            file_paths,
             img_labels,
             test_size=val_split,
             shuffle=shuffle,
             random_state=random_state,
         )
 
-        # Create TensorFlow Datasets
-        train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-        val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+        train_dataset = tf.data.Dataset.from_tensor_slices(
+            (train_file_paths, train_img_labels)
+        )
+        val_dataset = tf.data.Dataset.from_tensor_slices(
+            (val_file_paths, val_img_labels)
+        )
+
+        train_dataset = train_dataset.map(
+            load_and_preprocess_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
+        val_dataset = val_dataset.map(
+            load_and_preprocess_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
 
     # Shuffle, batch, and prefetch for performance
     train_dataset = (
@@ -109,7 +145,6 @@ def load_dataset_from_directory(
     val_dataset = val_dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     return train_dataset, val_dataset
-
 
 def build_model(
     model_arch, input_shape, top_layers=[], output_layers=[], freeze=True

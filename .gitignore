@@ -1,0 +1,4 @@
+.vscode/
+data/
+deep_learning/__pycache__/
+poetry.lock

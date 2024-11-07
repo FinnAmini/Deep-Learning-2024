@@ -1,12 +1,12 @@
 from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.applications as keras_app
-from train import load_dataset_from_directory, build_model
+from train import build_model, load_dataset_from_directory
 from tensorflow.keras.layers import Dense, Dropout
 
 MODEL_ARCHS = {
     "resnet50": keras_app.ResNet50,
-    "resnet101": keras_app.ResNet101,
-    "resnet152": keras_app.ResNet152,
+    # "resnet101": keras_app.ResNet101,
+    # "resnet152": keras_app.ResNet152,
 }
 
 top_layers = [Dense(256, activation="relu"), Dropout(0.3)]
@@ -16,7 +16,7 @@ output_layers = [
     Dense(1, activation="sigmoid", name="gender_classification"),
 ]
 train_ds, val_ds = load_dataset_from_directory(
-    "data_test", batch_size=64, multi_task=True
+    "data/training", batch_size=64, multi_task=True
 )
 # images = ...  # shape (num_samples, 224, 224, 3)
 # face_labels = ...  # shape (num_samples, 1) with binary labels 0 or 1
@@ -41,5 +41,5 @@ for freeze in [True, False]:
             },
         )
 
-model.fit(train_ds, epochs=50, validation_data=val_ds)
-model.save(f"models/{model_name}.keras")
+        model.fit(train_ds, epochs=5, validation_data=val_ds)
+        model.save(f"models/{model_name}.keras")
