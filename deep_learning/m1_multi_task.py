@@ -3,6 +3,8 @@ import tensorflow.keras.applications as keras_app
 from train import build_model, load_dataset_from_directory, multi_task_loss
 from tensorflow.keras.layers import Dense, Dropout
 import os
+import tf
+import datetime
 
 os.makedirs("models/mt", exist_ok=True)
 
@@ -14,7 +16,7 @@ MODEL_ARCHS = {
 
 
 train_ds, val_ds = load_dataset_from_directory(
-    "data_test", "data_test_labels", batch_size=64, multi_task=True
+    "data/training", "data/labels/training", batch_size=64, multi_task=True
 )
 
 for arch_name, arch in MODEL_ARCHS.items():
@@ -37,5 +39,20 @@ for arch_name, arch in MODEL_ARCHS.items():
             },
         )
 
-        model.fit(train_ds, epochs=10, validation_data=val_ds)
+        train_log_dir = f"logs/mt/train/{model_name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        tensorboard_train_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=train_log_dir, histogram_freq=1
+        )
+
+        val_log_dir = f"logs/mt/val/{model_name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        tensorboard_val_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=val_log_dir, histogram_freq=1
+        )
+
+        model.fit(
+            train_ds,
+            epochs=10,
+            validation_data=val_ds,
+            callbacks=[tensorboard_train_callback, tensorboard_val_callback],
+        )
         model.save(f"models/mt/{model_name}.keras")
