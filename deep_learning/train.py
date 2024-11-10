@@ -1,4 +1,4 @@
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import os
 import json
@@ -6,6 +6,52 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.layers import Flatten
+from tensorflow.keras.optimizers import Adam
+from keras.saving import register_keras_serializable
+from tensorflow.keras.preprocessing import image
+
+
+def create_dataset(
+    image_size, img_paths, labels, age_labels=None, gender_labels=None, batch_size=32
+):
+    def parse_image(
+        file_path,
+        label,
+        age_label=None,
+        gender_label=None,
+        multi_task=False,
+    ):
+        img = tf.io.read_file(file_path)
+        img = tf.image.decode_image(img, channels=3)
+        img.set_shape([None, None, 3])
+        img = tf.image.resize(img, image_size)
+        img = img / 255.0
+        if multi_task:
+            return img, (label, age_label, gender_label)
+        return img, label
+
+    def load_and_preprocess_image(image_size, file_path, label):
+        return parse_image(image_size, file_path, label, multi_task=False)
+
+    def load_and_preprocess_image_multi_task(file_path, label, age_label, gender_label):
+        return parse_image(file_path, label, age_label, gender_label, True)
+
+    if age_labels is not None and gender_labels is not None:
+        dataset = tf.data.Dataset.from_tensor_slices(
+            (img_paths, labels, age_labels, gender_labels)
+        )
+        map_fn = load_and_preprocess_image_multi_task
+    else:
+        dataset = tf.data.Dataset.from_tensor_slices((img_paths, labels))
+        map_fn = load_and_preprocess_image
+
+    dataset = dataset.map(map_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    dataset = (
+        dataset.shuffle(buffer_size=1000, seed=42)
+        .batch(batch_size)
+        .prefetch(tf.data.experimental.AUTOTUNE)
+    )
+    return dataset
 
 
 def load_dataset_from_directory(
@@ -18,28 +64,7 @@ def load_dataset_from_directory(
     random_state=42,
     multi_task=True,
 ):
-    def parse_image(
-        file_path, label, age_label=None, gender_label=None, multi_task=False
-    ):
-        img = tf.io.read_file(file_path)
-        img = tf.image.decode_image(img, channels=3)
-        img.set_shape([None, None, 3])  # Ensure the image tensor has a shape
-        img = tf.image.resize(img, image_size)
-        img = img / 255.0
-        if multi_task:
-            return img, (label, age_label, gender_label)
-        return img, label
-
-    def load_and_preprocess_image(file_path, label):
-        return parse_image(file_path, label, multi_task=False)
-
-    def load_and_preprocess_image_multi_task(file_path, label, age_label, gender_label):
-        return parse_image(file_path, label, age_label, gender_label, True)
-
-    # List all subdirectories (class labels)
     class_names = sorted(os.listdir(directory))
-
-    # Initialize lists to store file paths and labels
     file_paths = []
     img_labels = []
 
@@ -47,11 +72,9 @@ def load_dataset_from_directory(
         age_labels = []
         gender_labels = []
 
-    # Iterate over each class folder
     for label, class_name in enumerate(class_names):
         class_folder = os.path.join(directory, class_name)
         if os.path.isdir(class_folder):
-            # Iterate over each image file in the class folder
             for file in os.scandir(class_folder):
                 file_ext = file.name.split(".")[-1]
                 if file_ext == "png" or file_ext == "jpg":
@@ -71,89 +94,86 @@ def load_dataset_from_directory(
                                 gender = json_data[0]["faceAttributes"]["gender"]
                                 gender_labels.append(0 if gender == "male" else 1)
                         else:
-                            age_labels.append(0)  # Default to 0 if no data
-                            gender_labels.append(0)  # Default to 0 if no data
+                            age_labels.append(0)
+                            gender_labels.append(0)
 
-    # Convert labels to numpy arrays
     img_labels = np.array(img_labels)
 
     if multi_task:
         age_labels = np.array(age_labels)
         gender_labels = np.array(gender_labels)
 
-        # # Normalize age labels
-        # age_labels = (age_labels - age_labels.min()) / (age_labels.max() - age_labels.min())
-
-        # Split into training and test datasets
-        (
-            train_file_paths,
-            val_file_paths,
-            train_img_labels,
-            val_img_labels,
-            train_age_labels,
-            val_age_labels,
-            train_gender_labels,
-            val_gender_labels,
-        ) = train_test_split(
-            file_paths,
-            img_labels,
-            age_labels,
-            gender_labels,
-            test_size=val_split,
-            shuffle=shuffle,
-            random_state=random_state,
-        )
-
-        train_dataset = tf.data.Dataset.from_tensor_slices(
-            (train_file_paths, train_img_labels, train_age_labels, train_gender_labels)
-        )
-        val_dataset = tf.data.Dataset.from_tensor_slices(
-            (val_file_paths, val_img_labels, val_age_labels, val_gender_labels)
-        )
-
-        train_dataset = train_dataset.map(
-            load_and_preprocess_image_multi_task,
-            num_parallel_calls=tf.data.experimental.AUTOTUNE,
-        )
-        val_dataset = val_dataset.map(
-            load_and_preprocess_image_multi_task,
-            num_parallel_calls=tf.data.experimental.AUTOTUNE,
-        )
-    else:
-        # Split into training and test datasets
-        train_file_paths, val_file_paths, train_img_labels, val_img_labels = (
-            train_test_split(
+        if val_split is not None:
+            (
+                train_file_paths,
+                val_file_paths,
+                train_img_labels,
+                val_img_labels,
+                train_age_labels,
+                val_age_labels,
+                train_gender_labels,
+                val_gender_labels,
+            ) = train_test_split(
                 file_paths,
                 img_labels,
+                age_labels,
+                gender_labels,
                 test_size=val_split,
                 shuffle=shuffle,
                 random_state=random_state,
             )
-        )
 
-        train_dataset = tf.data.Dataset.from_tensor_slices(
-            (train_file_paths, train_img_labels)
-        )
-        val_dataset = tf.data.Dataset.from_tensor_slices(
-            (val_file_paths, val_img_labels)
-        )
+            train_dataset = create_dataset(
+                image_size,
+                train_file_paths,
+                train_img_labels,
+                train_age_labels,
+                train_gender_labels,
+                batch_size,
+            )
 
-        train_dataset = train_dataset.map(
-            load_and_preprocess_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
-        )
-        val_dataset = val_dataset.map(
-            load_and_preprocess_image, num_parallel_calls=tf.data.experimental.AUTOTUNE
-        )
-
-    # Shuffle, batch, and prefetch for performance
-    train_dataset = (
-        train_dataset.shuffle(buffer_size=1000, seed=random_state)
-        .batch(batch_size)
-        .prefetch(tf.data.experimental.AUTOTUNE)
-    )
-    val_dataset = val_dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-
-    return train_dataset, val_dataset
+            val_dataset = create_dataset(
+                image_size,
+                val_file_paths,
+                val_img_labels,
+                val_age_labels,
+                val_gender_labels,
+                batch_size,
+            )
+            return train_dataset, val_dataset
+        else:
+            test_dataset = create_dataset(
+                image_size,
+                file_paths,
+                img_labels,
+                age_labels,
+                gender_labels,
+                batch_size,
+            )
+            return test_dataset
+    else:
+        if val_split is None:
+            train_file_paths, val_file_paths, train_img_labels, val_img_labels = (
+                train_test_split(
+                    file_paths,
+                    img_labels,
+                    test_size=val_split,
+                    shuffle=shuffle,
+                    random_state=random_state,
+                )
+            )
+            train_dataset = create_dataset(
+                image_size, train_file_paths, train_img_labels, batch_size=batch_size
+            )
+            val_dataset = create_dataset(
+                image_size, val_file_paths, val_img_labels, batch_size=batch_size
+            )
+            return train_dataset, val_dataset
+        else:
+            test_dataset = create_dataset(
+                image_size, file_paths, img_labels, batch_size=batch_size
+            )
+            return test_dataset
 
 
 def build_model(
@@ -191,10 +211,10 @@ def build_model(
     return model
 
 
-def load_data(path, batch_size=32):
+def load_data(path, batch_size=32, val_split=0.2):
     train_datagen = ImageDataGenerator(
         rescale=1.0 / 255.0,
-        validation_split=0.2,
+        validation_split=val_split,
     )
 
     train_ds = train_datagen.flow_from_directory(
@@ -222,12 +242,13 @@ def load_data(path, batch_size=32):
     return train_ds, val_ds
 
 
+@register_keras_serializable()
 def multi_task_loss(y_true, y_pred):
-    face_detection_true = y_true[0]  # Annahme: 1. Spalte für Gesichtserkennung
+    face_detection_true = y_true[0]
     face_detection_pred = y_pred[0]
-    age_true = y_true[1]  # Annahme: 2. Spalte für Alter
+    age_true = y_true[1]
     age_pred = y_pred[1]
-    gender_true = y_true[2]  # Annahme: 3. Spalte für Geschlecht
+    gender_true = y_true[2]
     gender_pred = y_pred[2]
 
     face_detection_loss = tf.keras.losses.binary_crossentropy(
@@ -245,3 +266,75 @@ def multi_task_loss(y_true, y_pred):
         + tf.reduce_mean(gender_loss)
     )
     return total_loss
+
+
+def eval(model: str, images: str, labels: str):
+    try:
+        if labels is not None:
+            model = load_model(
+                model, custom_objects={"multi_task_loss": multi_task_loss}
+            )
+        else:
+            model = load_model(model)
+    except Exception as e:
+        raise ValueError(f"Invalid model name {model}!") from e
+
+    try:
+        if labels is not None:
+            test_data = load_dataset_from_directory(
+                images, labels, batch_size=64, multi_task=True, val_split=None
+            )
+        else:
+            test_data = load_data(images, batch_size=64)
+    except Exception as e:
+        raise ValueError(
+            f"Invalid images_path {images} or labels_path {labels}!"
+        ) from e
+
+    if labels is not None:
+        model.compile(
+            optimizer=Adam(learning_rate=0.0001),
+            loss=multi_task_loss,
+            metrics={
+                "face_detection": "accuracy",
+                "age_prediction": "mae",
+                "gender_classification": "accuracy",
+            },
+        )
+    else:
+        model.compile(
+            optimizer=Adam(learning_rate=0.0001),
+            loss="binary_crossentropy",
+            metrics=["accuracy"],
+        )
+
+    model.evaluate(test_data, verbose=2)
+
+
+def load_and_preprocess_image(img_path, target_size=(224, 224)):
+    img = image.load_img(img_path, target_size=target_size)
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array /= 255.0
+    return img_array
+
+
+def predict(model, img_array):
+    return model.predict(img_array)
+
+
+def predict_single_image(model, img_path):
+    img_array = load_and_preprocess_image(img_path)
+    predictions = predict(model, img_array)
+    gender_pred = predictions[2][0]
+    return 0 if gender_pred < 0.5 else 1
+
+    # print(f"Face Detection: {'Face' if face_detection_pred < 0.5 else 'No Face', face_detection_pred}")
+    # print(f"Predicted Age: {age_pred}")
+    # print(f"Predicted Gender: {gender, gender_pred}")
+
+
+if __name__ == "__main__":
+    model_path = "models/st_resnet50_adam_lr=0.0001_lc1_freeze=True_test_3.keras"
+    img_path = "data/training/faces/00001.png"
+    predict_single_image(model_path, img_path)
