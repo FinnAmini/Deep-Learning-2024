@@ -94,8 +94,8 @@ def load_dataset_from_directory(
                                 gender = json_data[0]["faceAttributes"]["gender"]
                                 gender_labels.append(0 if gender == "male" else 1)
                         else:
-                            age_labels.append(0)
-                            gender_labels.append(0)
+                            age_labels.append(-1)
+                            gender_labels.append(-1)
 
     img_labels = np.array(img_labels)
 
@@ -244,6 +244,32 @@ def load_data(path, batch_size=32, val_split=0.2):
 
 @register_keras_serializable()
 def multi_task_loss(y_true, y_pred):
+    face_detection_true = y_true[0]
+    face_detection_pred = y_pred[0]
+    age_true = y_true[1]
+    age_pred = y_pred[1]
+    gender_true = y_true[2]
+    gender_pred = y_pred[2]
+
+    face_detection_loss = tf.keras.losses.binary_crossentropy(
+        face_detection_true, face_detection_pred
+    )
+
+    mask = tf.cast(tf.cast(face_detection_true, tf.float32) > 0.5, tf.float32)
+
+    age_loss = tf.keras.losses.MeanSquaredError()(age_true, age_pred) * mask
+    gender_loss = tf.keras.losses.binary_crossentropy(gender_true, gender_pred) * mask
+
+    total_loss = (
+        tf.reduce_mean(face_detection_loss)
+        + tf.reduce_mean(age_loss)
+        + tf.reduce_mean(gender_loss)
+    )
+    return total_loss
+
+
+@register_keras_serializable()
+def custom_loss_age(y_true, y_pred):
     face_detection_true = y_true[0]
     face_detection_pred = y_pred[0]
     age_true = y_true[1]
