@@ -85,6 +85,7 @@ def load_dataset_from_directory(
                         json_file_path = os.path.join(
                             label_directory, file.name.replace(file_ext, "json")
                         )
+                        # print(label_directory, json_file_path)
                         if os.path.exists(json_file_path) and os.path.isfile(
                             json_file_path
                         ):
@@ -174,6 +175,42 @@ def load_dataset_from_directory(
                 image_size, file_paths, img_labels, batch_size=batch_size
             )
             return test_dataset
+
+
+def build_model_mt(model_arch, input_shape, top_layer_confs, freeze=True) -> Model:
+    """Builds a keras model based on the given configuration values
+
+    Args:
+        input_shape (_type_): input shape for the base model
+        model_arch (_type_): base model architecture
+        top_layers (list, optional): top layers for the base model, not including output layers. Defaults to [].
+        output_layers (list, optional): output layers for the base model. Defaults to [].
+        freeze (bool, optional): determines whether the feature extraction layers shall be freezed. Defaults to True.
+
+    Returns:
+        Model: configured keras model
+    """
+    base_model = model_arch(
+        weights="imagenet", include_top=False, input_shape=input_shape
+    )
+
+    if freeze:
+        for layer in base_model.layers:
+            layer.trainable = False
+
+    outputs = []
+
+    x = base_model.output
+    x = Flatten()(x)
+
+    for top_layers in top_layer_confs:
+        y = x
+        for layer in top_layers:
+            y = layer(y)
+        outputs.append(y)
+
+    model = Model(inputs=base_model.input, outputs=outputs)
+    return model
 
 
 def build_model(
@@ -352,12 +389,7 @@ def predict(model, img_array):
 def predict_single_image(model, img_path):
     img_array = load_and_preprocess_image(img_path)
     predictions = predict(model, img_array)
-    gender_pred = predictions[2][0]
-    return 0 if gender_pred < 0.5 else 1
-
-    # print(f"Face Detection: {'Face' if face_detection_pred < 0.5 else 'No Face', face_detection_pred}")
-    # print(f"Predicted Age: {age_pred}")
-    # print(f"Predicted Gender: {gender, gender_pred}")
+    return predictions
 
 
 if __name__ == "__main__":
