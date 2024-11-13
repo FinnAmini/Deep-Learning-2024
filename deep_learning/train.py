@@ -265,18 +265,20 @@ def load_data(path, batch_size=32, val_split=0.2):
         seed=42,
     )
 
-    val_ds = train_datagen.flow_from_directory(
-        path,
-        target_size=(224, 224),
-        batch_size=batch_size,
-        class_mode="binary",
-        subset="validation",
-        classes=["faces", "places"],
-        shuffle=True,
-        seed=42,
-    )
-
-    return train_ds, val_ds
+    if val_split > 0:
+        val_ds = train_datagen.flow_from_directory(
+            path,
+            target_size=(224, 224),
+            batch_size=batch_size,
+            class_mode="binary",
+            subset="validation",
+            classes=["faces", "places"],
+            shuffle=True,
+            seed=42,
+        )
+        return train_ds, val_ds
+    else:
+        return train_ds
 
 
 @register_keras_serializable()
@@ -348,7 +350,7 @@ def eval(model: str, images: str, labels: str):
                 images, labels, batch_size=64, multi_task=True, val_split=None
             )
         else:
-            test_data = load_data(images, batch_size=64)
+            test_data = load_data(images, batch_size=64, val_split=0)
     except Exception as e:
         raise ValueError(
             f"Invalid images_path {images} or labels_path {labels}!"
