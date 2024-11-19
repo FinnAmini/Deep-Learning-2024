@@ -432,7 +432,7 @@ def eval(model: str, images: str, labels: str):
     except Exception as e:
         raise ValueError(f"Invalid model name {model}!") from e
     
-    print(model.summary())
+    # print(model.summary())
 
     try:
         if labels is not None:

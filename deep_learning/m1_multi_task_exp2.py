@@ -77,7 +77,7 @@ for scheduling in [False, True]:
 
             model.fit(
                 train_ds,
-                epochs=5,
+                epochs=20,
                 validation_data=val_ds,
                 callbacks=[tensorboard_train_callback, schedule_callback],
             )
