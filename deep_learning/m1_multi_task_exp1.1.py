@@ -13,14 +13,17 @@ from train import (
 )
 
 if __name__ == "__main__":
+    # Load training and validation datasets
     train_ds, val_ds = load_dataset_from_directory(
         "data/training", "data/labels/train", batch_size=64, multi_task=True
     )
 
+    # Iterate over different dropout rates
     for dropout in [0.1, 0.3, 0.5]:
+        # Iterate over different top layer configurations
         for i, top_layer_conf in enumerate(
             [
-                # CONF 1
+                # Configuration 1
                 [
                     [
                         Dense(256, activation="relu", name="dense1.1"),
@@ -38,7 +41,7 @@ if __name__ == "__main__":
                         Dense(1, activation="sigmoid", name="gender_classification"),
                     ],
                 ],
-                # CONF 2
+                # Configuration 2
                 [
                     [
                         Dense(256, activation="relu", name="dense1.1"),
@@ -62,7 +65,7 @@ if __name__ == "__main__":
                         Dense(1, activation="sigmoid", name="gender_classification"),
                     ],
                 ],
-                # CONF 3
+                # Configuration 3
                 [
                     [
                         Dense(128, activation="relu", name="dense1.1"),
@@ -80,7 +83,7 @@ if __name__ == "__main__":
                         Dense(1, activation="sigmoid", name="gender_classification"),
                     ],
                 ],
-                # CONF 4
+                # Configuration 4
                 [
                     [
                         Dense(128, activation="relu", name="dense1.1"),
@@ -106,13 +109,16 @@ if __name__ == "__main__":
                 ],
             ]
         ):
+            # Define model name based on configuration and dropout rate
             model_name = (
                 f"mt_resnet50_adam_lr=0.0001_lc={i}_freeze=True_dropout={dropout}"
             )
+            # Build the multi-task model
             model = build_model_mt(
                 keras_app.ResNet50, (224, 224, 3), top_layer_conf, True
             )
 
+            # Compile the model with custom losses and metrics
             model.compile(
                 optimizer=Adam(learning_rate=0.0001),
                 loss=[
@@ -127,11 +133,13 @@ if __name__ == "__main__":
                 },
             )
 
+            # Define TensorBoard log directory
             train_log_dir = f"logs/mt/{model_name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
             tensorboard_train_callback = tf.keras.callbacks.TensorBoard(
                 log_dir=train_log_dir, histogram_freq=1
             )
 
+            # Train the model
             model.fit(
                 train_ds,
                 epochs=20,
@@ -139,5 +147,6 @@ if __name__ == "__main__":
                 callbacks=[tensorboard_train_callback],
             )
 
+            # Save the trained model
             os.makedirs("models/mt", exist_ok=True)
             model.save(f"models/mt/{model_name}.keras")
