@@ -2,3 +2,11 @@
 data/
 deep_learning/__pycache__/
 poetry.lock
+data_test/
+data_test_labels/
+deep_learning/train copy.py
+helper/predict.py
+logs/fit/
+logs/mt/
+models/
+nohup.out
