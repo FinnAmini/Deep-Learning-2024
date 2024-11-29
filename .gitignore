@@ -1,5 +1,5 @@
 .vscode/
-data/
+*data/
 deep_learning/__pycache__/
 poetry.lock
 data_test/
@@ -10,3 +10,5 @@ logs/fit/
 logs/mt/
 models/
 nohup.out
+*training-runs/
+*.cache
