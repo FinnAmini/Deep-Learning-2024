@@ -12,3 +12,7 @@ models/
 nohup.out
 *training-runs/
 *.cache
+*generatedImages/
+simple_test/
+simple_test_labels/
+*__pycache__*

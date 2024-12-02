@@ -1,8 +1,12 @@
-from m1_multi_task import custom_age_loss, custom_gender_loss
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.preprocessing import image
-
+from train import (
+    custom_age_loss,
+    custom_gender_loss,
+    custom_age_metric,
+    custom_gender_metric,
+)
 
 def load_and_preprocess_image(img_path, target_size=(224, 224)):
     img = image.load_img(img_path, target_size=target_size)
@@ -16,8 +20,11 @@ def predict_single_image(model_path, img_path):
     model = tf.keras.models.load_model(
         model_path,
         custom_objects={
-            "custom_gender_loss": custom_age_loss,
-            "custom_age_loss": custom_gender_loss,
+            "BinaryCrossentropy": tf.keras.losses.BinaryCrossentropy,
+            "custom_age_loss": custom_age_loss,
+            "custom_gender_loss": custom_gender_loss,
+            "custom_age_metric": custom_age_metric,
+            "custom_gender_metric": custom_gender_metric,
         },
     )
     img_array = load_and_preprocess_image(img_path)
@@ -37,6 +44,6 @@ def predict_single_image(model_path, img_path):
 
 
 if __name__ == "__main__":
-    model_path = "../../faminikaveh/projects/Deep-Learning-2024/models/mt_backup/mt_efficientnetb4_freeze=False.keras"  # Replace with your model path
-    img_path = "data/testing/faces/62525.png"  # Replace with your image path
+    model_path = "../models/mt_exp3_best/mt_resnet50_freeze=False.keras"  # Replace with your model path
+    img_path = "../data/testing/faces/62525.png"  # Replace with your image path
     predict_single_image(model_path, img_path)
