@@ -1,5 +1,5 @@
 .vscode/
-data/
+*data/
 deep_learning/__pycache__/
 poetry.lock
 data_test/
@@ -10,3 +10,12 @@ logs/fit/
 logs/mt/
 models/
 nohup.out
+*training-runs/
+*.cache
+*generatedImages/
+simple_test/
+simple_test_labels/
+**__pycache__*
+*Meilenstein3/generatedLabels*
+*Meilenstein3/stylegan3/eval.sh
+*Meilenstein3/stylegan3/generatedVideos/
