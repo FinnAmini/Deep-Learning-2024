@@ -179,8 +179,10 @@ def load_dataset_from_directory(
                         ):
                             with open(json_file_path) as json_file:
                                 json_data = json.load(json_file)
-                                age_labels.append(json_data[0]["faceAttributes"]["age"])
-                                gender = json_data[0]["faceAttributes"]["gender"]
+                                if type(json_data) == list:
+                                    json_data = json_data[0]
+                                age_labels.append(json_data["faceAttributes"]["age"])
+                                gender = json_data["faceAttributes"]["gender"]
                                 gender_labels.append(0 if gender == "male" else 1)
                         else:
                             age_labels.append(-1)

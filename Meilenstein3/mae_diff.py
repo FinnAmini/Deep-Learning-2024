@@ -17,8 +17,18 @@ def parse_args():
     return parser.parse_args()
 
 def load_data(img_dir: Path, label_dir: Path):
+    """
+    Load images and their corresponding age labels from the specified directories.
+
+    Args:
+        img_dir (Path): Directory containing the images.
+        label_dir (Path): Directory containing the JSON files with age labels.
+
+    Returns:
+        tuple: A tuple containing a list of age labels and a numpy array of images.
+    """
     print("Loading images...")
-    age_labels, images = [], []
+    age_labels, images = []
     for node in img_dir.iterdir():
         if node.name.endswith("png") or node.name.endswith("jpg"):
             try:
@@ -31,14 +41,31 @@ def load_data(img_dir: Path, label_dir: Path):
                 print(e)
     return age_labels, np.vstack(images)
 
-
-
 def predict(images, model):
+    """
+    Predict the ages for the given images using the provided model.
+
+    Args:
+        images (np.ndarray): The preprocessed images to predict.
+        model (tf.keras.Model): The trained TensorFlow Keras model.
+
+    Returns:
+        list of float: The predicted ages for the images.
+    """
     print("Predicting...")
     predictions = model.predict(images)
     return [p[0] for p in predictions[1]]
 
 def load_model(model_path):
+    """
+    Load a TensorFlow Keras model from the specified file path with custom objects.
+
+    Args:
+        model_path (str): The file path to the saved model.
+
+    Returns:
+        tf.keras.Model: The loaded Keras model with custom loss functions and metrics.
+    """
     return tf.keras.models.load_model(
         model_path,
         custom_objects={
@@ -51,6 +78,21 @@ def load_model(model_path):
     )
 
 def mae_per_age(predictions, age_labels):
+    """
+    Calculate the Mean Absolute Error (MAE) per age group.
+    This function calculates the MAE for different age groups by comparing the 
+    predicted ages with the actual ages. It categorizes the errors into three 
+    groups: errors greater than or equal to 2, 5, and 10 years.
+    Args:
+        predictions (list of int/float): The predicted ages.
+        age_labels (list of int/float): The actual ages.
+    Returns:
+        dict: A dictionary where the keys are the actual ages and the values are 
+              dictionaries containing the proportion of predictions with errors 
+              greater than or equal to 2, 5, and 10 years.
+    Raises:
+        ValueError: If the length of `age_labels` and `predictions` are not the same.
+    """
     print("Calculating MAE per age...")
     if len(age_labels) != len(predictions):
         raise ValueError("The length of actual_ages and predicted_ages must be the same.")
@@ -79,6 +121,20 @@ def mae_per_age(predictions, age_labels):
     return diff_dict
 
 def visualize(data):
+    """
+    Visualizes the percentage of images by age and prediction difference.
+
+    Parameters:
+    data (dict): A dictionary where keys are ages and values are dictionaries.
+                 The inner dictionaries have differences as keys and counts as values.
+
+    The function creates a line plot with:
+    - x-axis representing age
+    - y-axis representing the percentage of images
+    - hue representing the difference between actual and predicted age
+
+    The plot is saved as 'counts_per_age.png' with a resolution of 300 dpi.
+    """
     sns.set_theme(context='notebook', style='darkgrid', palette='deep', font='sans-serif', font_scale=1, color_codes=True, rc=None)
     rows = []
     for age, diffs in data.items():
