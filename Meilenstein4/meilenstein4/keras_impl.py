@@ -15,8 +15,11 @@ from keras.layers import (
     BatchNormalization,
     Flatten
 )
+import tensorflow as tf
 from tensorflow.keras import backend as K
 from argparse import ArgumentParser
+from dataloading import create_dataloader
+from datetime import datetime
 
 def preprocess_image(image_path, img_size=(224, 224)):
     """Loads image from the given path and preprocess."""
@@ -49,7 +52,7 @@ def load_data(base_path):
 def split_data(images, labels, val_split=0.2):
     """Splits the images and labels into training and validation sets."""
     train_images, val_images, train_labels, val_labels = train_test_split(
-        images, labels, test_size=0.2, stratify=labels, random_state=42
+        images, labels, test_size=val_split, stratify=labels, random_state=42
     )
     return train_images, val_images, train_labels, val_labels
 
@@ -201,24 +204,24 @@ def plt_metric(history, metric, title, has_valid=True):
     plt.xlabel("epoch")
     plt.show()
 
-def train(data_path, batch_size, epochs, margin, output, visualize_data=False, evaluate=False):
+def train(data_path, batch_size, epochs, margin, output, val_split, visualize_data=False, evaluate=False):
     """Trains the Siamese network model."""
     # Load the dataset and split it into training and validation sets
-    x_train, y_train = load_data(data_path)
-    x_train, x_val, y_train, y_val = split_data(x_train, y_train, val_split=0.2)
-    pairs_train, labels_train = make_pairs(x_train, y_train)
-    pairs_val, labels_val = make_pairs(x_val, y_val)
+    # x_train, y_train = load_data(data_path)
+    # x_train, x_val, y_train, y_val = split_data(x_train, y_train, val_split=0.2)
+    # pairs_train, labels_train = make_pairs(x_train, y_train)
+    # pairs_val, labels_val = make_pairs(x_val, y_val)
 
-    # Extract the images from the pairs for further processing
-    x_train_1 = pairs_train[:, 0]
-    x_train_2 = pairs_train[:, 1]
-    x_val_1 = pairs_val[:, 0]
-    x_val_2 = pairs_val[:, 1]
+    # # Extract the images from the pairs for further processing
+    # x_train_1 = pairs_train[:, 0]
+    # x_train_2 = pairs_train[:, 1]
+    # x_val_1 = pairs_val[:, 0]
+    # x_val_2 = pairs_val[:, 1]
 
-    # if specified, visualize the data
-    if visualize_data:
-        visualize(pairs_train[:-1], labels_train[:-1], to_show=4, num_col=4)
-        visualize(pairs_val[:-1], labels_val[:-1], to_show=4, num_col=4)
+    # # if specified, visualize the data
+    # if visualize_data:
+    #     visualize(pairs_train[:-1], labels_train[:-1], to_show=4, num_col=4)
+    #     visualize(pairs_val[:-1], labels_val[:-1], to_show=4, num_col=4)
 
     # Build and compile the Siamese network model
     siamese = build_model(input_shape=(224, 224, 3))
@@ -226,18 +229,25 @@ def train(data_path, batch_size, epochs, margin, output, visualize_data=False, e
     siamese.summary()
 
     # Train the model
-    history = siamese.fit(
-        [x_train_1, x_train_2],
-        labels_train,
-        validation_data=([x_val_1, x_val_2], labels_val),
-        batch_size=batch_size,
-        epochs=epochs,
-    )
+    # history = siamese.fit(
+    #     [x_train_1, x_train_2],
+    #     labels_train,
+    #     validation_data=([x_val_1, x_val_2], labels_val),
+    #     batch_size=batch_size,
+    #     epochs=epochs,
+    # )
+
+    # Define log directory for TensorBoard
+    train_log_dir = (f"logs/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
+
+    dataloaders = create_dataloader(data_path, batch_size=batch_size, val_split=val_split)
+    history = siamese.fit(dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback])
 
     # If specified, evaluate the model
-    if evaluate:
-        plt_metric(history=history.history, metric="accuracy", title="Model accuracy")
-        plt_metric(history=history.history, metric="loss", title="Contrastive Loss")
+    # if evaluate:
+    #     plt_metric(history=history.history, metric="accuracy", title="Model accuracy")
+    #     plt_metric(history=history.history, metric="loss", title="Contrastive Loss")
         
     # save the model
     siamese.save(output)
@@ -268,17 +278,18 @@ def parse_args():
     train_parser.add_argument("--img_height", "-ih", type=int, default=224, help="Image height")
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
-    train_parser.add_argument("--output", "-o", type=str, default="model.h5", help="Output model file")
+    train_parser.add_argument("--output", "-o", type=str, default="models/model.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
     train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
     train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
+    train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
     
     return parser.parse_args()
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.output, args.visualize_data, args.evaluate)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.output, args.val_split, args.visualize_data, args.evaluate)
 
 if __name__ == '__main__':
     args = parse_args()
