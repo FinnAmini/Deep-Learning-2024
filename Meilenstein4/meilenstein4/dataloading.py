@@ -34,17 +34,15 @@ def create_pairs(root_dir):
 
     for label, image_paths in data.items():
         for img_path in image_paths:
-            # Randonmly decide if the pair is positive or negative
-            is_positive = random.choice([True, False])
-            
-            if is_positive:
-                img_path2 = random.choice([ip for ip in image_paths if ip != img_path])
-            else:
-                label2 = random.choice([i for i in range(len(people)) if i != label])
-                img_path2 = random.choice(data[label2])
+            # positive pair
+            img_path2 = random.choice([ip for ip in image_paths if ip != img_path])
+            pairs.append((img_path.path, img_path2.path, 0))
 
-            pairs.append((img_path.path, img_path2.path, 1 if is_positive else 0))
-    
+            # negative pair
+            label2 = random.choice([i for i in range(len(people)) if i != label])
+            img_path2 = random.choice(data[label2])
+            pairs.append((img_path.path, img_path2.path, 1))
+            
     return pairs
 
 def split_pairs(pairs: List[Tuple[str, str, bool]], val_split: int = 0.2):
