@@ -19,7 +19,9 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 from argparse import ArgumentParser
 from dataloading import create_dataloader
-from datetime import datetime
+import datetime
+from sklearn.metrics import accuracy_score
+from tensorflow.keras.saving import register_keras_serializable
 
 def preprocess_image(image_path, img_size=(224, 224)):
     """Loads image from the given path and preprocess."""
@@ -124,40 +126,10 @@ def visualize(pairs, labels, to_show=6, num_col=3, predictions=None, test=False)
         plt.tight_layout(rect=(0, 0, 1.5, 1.5))
     plt.show()
 
+@register_keras_serializable()
 def euclidean_distance(vects):
     x, y = vects
     return K.sqrt(K.sum(K.square(x - y), axis=1, keepdims=True))
-
-def build_model(input_shape):
-    input = keras.layers.Input(input_shape)
-    x = keras.layers.BatchNormalization()(input)
-    x = keras.layers.Conv2D(4, (5, 5), activation="tanh")(x)
-    x = keras.layers.AveragePooling2D(pool_size=(2, 2))(x)
-    x = keras.layers.Conv2D(16, (5, 5), activation="tanh")(x)
-    x = keras.layers.AveragePooling2D(pool_size=(2, 2))(x)
-    x = keras.layers.Flatten()(x)
-
-    x = keras.layers.BatchNormalization()(x)
-    x = keras.layers.Dense(10, activation="tanh")(x)
-    embedding_network = keras.Model(input, x)
-
-
-    input_1 = keras.layers.Input(input_shape)
-    input_2 = keras.layers.Input(input_shape)
-
-    # As mentioned above, Siamese Network share weights between
-    # tower networks (sister networks). To allow this, we will use
-    # same embedding network for both tower networks.
-    tower_1 = embedding_network(input_1)
-    tower_2 = embedding_network(input_2)
-
-    merge_layer = keras.layers.Lambda(euclidean_distance, output_shape=(1,))(
-        [tower_1, tower_2]
-    )
-    normal_layer = keras.layers.BatchNormalization()(merge_layer)
-    output_layer = keras.layers.Dense(1, activation="sigmoid")(normal_layer)
-    siamese = keras.Model(inputs=[input_1, input_2], outputs=output_layer)
-    return siamese
 
 def build_model(input_shape):
     """Builds the Siamese network model."""
@@ -183,13 +155,16 @@ def build_model(input_shape):
     siamese = Model(inputs=[input_1, input_2], outputs=output_layer)
     return siamese
 
+@register_keras_serializable()
 def loss(margin=1):
     """Provides 'contrastive_loss' an enclosing scope with variable 'margin'."""
+    @register_keras_serializable()
     def contrastive_loss(y_true, y_pred):
         """Calculates the contrastive loss."""
         square_pred = ops.square(y_pred)
         margin_square = ops.square(ops.maximum(margin - (y_pred), 0))
-        return ops.mean((1 - y_true) * square_pred + (y_true) * margin_square)
+        res = ops.mean((1 - y_true) * square_pred + (y_true) * margin_square)
+        return res
 
     return contrastive_loss
 
@@ -204,7 +179,7 @@ def plt_metric(history, metric, title, has_valid=True):
     plt.xlabel("epoch")
     plt.show()
 
-def train(data_path, batch_size, epochs, margin, output, val_split, visualize_data=False, evaluate=False):
+def train(data_path, batch_size, epochs, margin, name, val_split, visualize_data=False, evaluate=False):
     """Trains the Siamese network model."""
     # Load the dataset and split it into training and validation sets
     # x_train, y_train = load_data(data_path)
@@ -225,7 +200,7 @@ def train(data_path, batch_size, epochs, margin, output, val_split, visualize_da
 
     # Build and compile the Siamese network model
     siamese = build_model(input_shape=(224, 224, 3))
-    siamese.compile(loss=loss(margin=margin), optimizer="RMSprop", metrics=["accuracy"])
+    siamese.compile(loss=loss(margin=margin), optimizer="adam", metrics=["accuracy"])
     siamese.summary()
 
     # Train the model
@@ -238,11 +213,24 @@ def train(data_path, batch_size, epochs, margin, output, val_split, visualize_da
     # )
 
     # Define log directory for TensorBoard
-    train_log_dir = (f"logs/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    train_log_dir = (f"logs/contrastive/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
 
+    checkpoint_dir = './checkpoints/contrastive'
+    checkpoint_filepath = f'{checkpoint_dir}/model_epoch_{{epoch:02d}}_{name}'
+    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_filepath,
+        save_weights_only=False,  
+        save_freq='epoch'          
+    )
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs('models/contrastive', exist_ok=True)
+
     dataloaders = create_dataloader(data_path, batch_size=batch_size, val_split=val_split)
-    history = siamese.fit(dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback])
+    siamese.fit(
+        dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback, checkpoint_callback]
+    )
 
     # If specified, evaluate the model
     # if evaluate:
@@ -250,21 +238,44 @@ def train(data_path, batch_size, epochs, margin, output, val_split, visualize_da
     #     plt_metric(history=history.history, metric="loss", title="Contrastive Loss")
         
     # save the model
-    siamese.save(output)
+    siamese.save(f"models/contrastive/{name}")
     
+def create_test_pairs(data_path):
+    """Creates test pairs for the Siamese network."""
+    left, right, labels = [], [], []
+    examples = 0
+    for person_dir in sorted(os.listdir(data_path)):
+        person_path = os.path.join(data_path, person_dir)
+        if os.path.isdir(person_path):
+            img_path = os.path.join(person_path, os.listdir(person_path)[0])
 
-def test(model):
+            # positive pair
+            pos_path = os.path.join(person_path, random.choice([p for p in os.listdir(person_path) if p != img_path]))
+            left.append(preprocess_image(img_path))
+            right.append(preprocess_image(pos_path))
+            labels.append(0)
+
+            # negative pair
+            neg_dir = os.path.join(data_path, random.choice([p for p in os.listdir(data_path) if p != person_dir]))
+            neg_path = os.path.join(neg_dir, random.choice(os.listdir(neg_dir)))
+            left.append(preprocess_image(img_path))
+            right.append(preprocess_image(neg_path))
+            labels.append(1)
+
+            examples += 1
+            if examples == 100:
+                break
+
+    return  np.array(left),  np.array(right), labels
+
+def test(model_path, data_path, batch_size=32):
     """Tests the Siamese network model."""
-    x_test, y_test = load_data("data/vgg_faces2_resized/test")
-    pairs_test, labels_test = make_pairs(x_test, y_test)
-    x_test_1 = pairs_test[:, 0]
-    x_test_2 = pairs_test[:, 1]
-    visualize(pairs_test[:-1], labels_test[:-1], to_show=4, num_col=4)
-
-    results = model.evaluate([x_test_1, x_test_2], labels_test)
-    print("test loss, test acc:", results)
-    predictions = model.predict([x_test_1, x_test_2])
-    visualize(pairs_test, labels_test, to_show=3, predictions=predictions, test=True)
+    left, right, labels = create_test_pairs(data_path)
+    model = tf.keras.models.load_model(model_path, custom_objects={'contrastive_loss': loss})
+    predictions = model.predict([left, right])
+    predicted_labels = (predictions > 0.5).astype(int)
+    accuracy = accuracy_score(labels, predicted_labels)
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
 
 
 def parse_args():
@@ -278,18 +289,28 @@ def parse_args():
     train_parser.add_argument("--img_height", "-ih", type=int, default=224, help="Image height")
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
-    train_parser.add_argument("--output", "-o", type=str, default="models/model.keras", help="Output model file")
+    train_parser.add_argument("--name", "-n", type=str, default="model.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
     train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
     train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
+
+    test_parser = subparsers.add_parser("test")
+    test_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    test_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    test_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
+    test_parser.set_defaults(func=test_handler)
     
     return parser.parse_args()
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.output, args.val_split, args.visualize_data, args.evaluate)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.visualize_data, args.evaluate)
+
+def test_handler(args):
+    """Handler for the test command."""
+    test(args.model, args.data, args.batch_size)
 
 if __name__ == '__main__':
     args = parse_args()

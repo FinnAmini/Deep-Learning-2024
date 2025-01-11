@@ -73,7 +73,7 @@ def _create_dataloader(pairs, img_width=224, img_height=224, batch_size=32):
             tf.TensorSpec(shape=(img_height, img_width, 3), dtype=tf.float32)),
             tf.TensorSpec(shape=(), dtype=tf.int32)
         )
-    ).shuffle(1000).batch(batch_size)
+    ).shuffle(1000).batch(batch_size).repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
 def create_dataloader(root_dir, img_width=224, img_height=224, batch_size=32, val_split=0.2):
     """
