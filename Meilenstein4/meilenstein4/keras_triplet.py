@@ -16,29 +16,8 @@ from keras.layers import (
 )
 import datetime
 import os
+from tripletdata import create_dataloader
 
-def preprocess_image(filename, target_shape=(224, 224)):
-    """
-    Load the specified file as a JPEG image, preprocess it and
-    resize it to the target shape.
-    """
-    image_string = tf.io.read_file(filename)
-    image = tf.image.decode_jpeg(image_string, channels=3)
-    image = tf.image.convert_image_dtype(image, tf.float32)
-    image = tf.image.resize(image, target_shape)
-    return image
-
-
-def preprocess_triplets(anchor, positive, negative):
-    """
-    Given the filenames corresponding to the three images, load and
-    preprocess them.
-    """
-    return (
-        preprocess_image(anchor),
-        preprocess_image(positive),
-        preprocess_image(negative),
-    )
 
 class DistanceLayer(layers.Layer):
     """
@@ -70,6 +49,7 @@ class SiameseModel(Model):
         self.siamese_network = siamese_network
         self.margin = margin
         self.loss_tracker = metrics.Mean(name="loss")
+        self.accuracy_tracker = metrics.Mean(name="accuracy")
 
     def call(self, inputs):
         return self.siamese_network(inputs)
@@ -81,6 +61,7 @@ class SiameseModel(Model):
         # `compile()`.
         with tf.GradientTape() as tape:
             loss = self._compute_loss(data)
+            accuracy = self._compute_accuracy(data)
 
         # Storing the gradients of the loss function with respect to the
         # weights/parameters.
@@ -93,14 +74,24 @@ class SiameseModel(Model):
 
         # Let's update and return the training loss metric.
         self.loss_tracker.update_state(loss)
-        return {"loss": self.loss_tracker.result()}
+        print('##############')
+        print(f"\nBatch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
+        print("Batch acc:", accuracy.numpy())
+        self.accuracy_tracker.update_state(accuracy)
+        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
+        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
+        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
+        return {"loss": self.loss_tracker.result().numpy(), "accuracy": self.accuracy_tracker.result().numpy()}
 
     def test_step(self, data):
         loss = self._compute_loss(data)
+        accuracy = self._compute_accuracy(data)
+        print('IM ALSO HERE')
 
         # Let's update and return the loss metric.
         self.loss_tracker.update_state(loss)
-        return {"loss": self.loss_tracker.result()}
+        self.accuracy_tracker.update_state(accuracy)
+        return {"loss": self.loss_tracker.result(), "accuracy": self.accuracy_tracker.result()}
 
     def _compute_loss(self, data):
         # The output of the network is a tuple containing the distances
@@ -114,66 +105,18 @@ class SiameseModel(Model):
         loss = tf.maximum(loss + self.margin, 0.0)
         return loss
 
+    def _compute_accuracy(self, data):
+        # Correct predictions are when the anchor-positive distance is less than anchor-negative
+        ap_distance, an_distance = self.siamese_network(data)
+        correct = tf.cast(ap_distance < an_distance, tf.float32)
+        accuracy = tf.reduce_mean(correct)
+        return accuracy
+
     @property
     def metrics(self):
         # We need to list our metrics here so the `reset_states()` can be
         # called automatically.
-        return [self.loss_tracker]
-
-def create_image_lists(image_dir):
-    anchor_images, positive_images = [], []
-
-    # Iterate over each person's directory
-    for person_dir in Path(image_dir).iterdir():
-        if person_dir.is_dir():
-            person_images = sorted(person_dir.glob("*"))  # List images in sorted order
-            # Create pairs of anchor and positive images
-            for i in range(len(person_images) - 1):
-                anchor_images.append(str(person_images[i]))
-                positive_images.append(str(person_images[i + 1]))
-            anchor_images.append(str(person_images[-1]))
-            positive_images.append(str(person_images[0]))
-
-    return anchor_images, positive_images
-
-def load_data(images_path, batch_size=32, val_split=0.2):
-    """Function to load the data from the specified paths."""
-    # We need to make sure both the anchor and positive images are loaded in
-    # sorted order so we can match them together.
-    anchor_images, positive_images = create_image_lists(images_path)
-
-    image_count = len(anchor_images)
-
-    anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
-    positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
-
-    # To generate the list of negative images, let's randomize the list of
-    # available images and concatenate them together.
-    rng = np.random.RandomState(seed=42)
-    rng.shuffle(anchor_images)
-    rng.shuffle(positive_images)
-
-    negative_images = anchor_images + positive_images
-    np.random.RandomState(seed=32).shuffle(negative_images)
-
-    negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
-    negative_dataset = negative_dataset.shuffle(buffer_size=4096)
-
-    dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset))
-    dataset = dataset.shuffle(buffer_size=1024)
-    dataset = dataset.map(preprocess_triplets)
-
-    # Let's now split our dataset in train and validation.
-    train_dataset = dataset.take(round(image_count * (1 - val_split)))
-    val_dataset = dataset.skip(round(image_count * (1 - val_split)))
-
-    train_dataset = train_dataset.batch(batch_size, drop_remainder=False)
-    train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
-
-    val_dataset = val_dataset.batch(batch_size, drop_remainder=False)
-    val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
-
-    return train_dataset, val_dataset
+        return [self.loss_tracker, self.accuracy_tracker]
 
 def build_model(input_shape):
     """Builds the Siamese network model."""
@@ -201,10 +144,9 @@ def build_model(input_shape):
 
 
 def train(data_path, batch_size, epochs, margin, name, val_split):
-    train_dataset, val_dataset = load_data(data_path, batch_size, val_split)
     model = build_model((224, 224, 3))
     siamese_model = SiameseModel(model, margin=margin)
-    siamese_model.compile(optimizer="adam")
+    siamese_model.compile(optimizer="adam", run_eagerly=True)
 
     train_log_dir = (f"logs/triplet/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
@@ -220,7 +162,8 @@ def train(data_path, batch_size, epochs, margin, name, val_split):
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs('models/triplet', exist_ok=True)
 
-    siamese_model.fit(train_dataset, validation_data=val_dataset, epochs=epochs, callbacks=[tensorboard_train_callback, checkpoint_callback])
+    dataloaders = create_dataloader(data_path, batch_size=batch_size, val_split=val_split)
+    siamese_model.fit(dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback, checkpoint_callback])
     siamese_model.save(f"models/triplet/{name}")
 
 def parse_args():
@@ -234,10 +177,8 @@ def parse_args():
     train_parser.add_argument("--img_height", "-ih", type=int, default=224, help="Image height")
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
-    train_parser.add_argument("--name", "-n", type=str, default="model.keras", help="Output model file")
+    train_parser.add_argument("--name", "-n", type=str, default="model_triplet.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
-    train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
-    train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
     
@@ -245,7 +186,7 @@ def parse_args():
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.visualize_data, args.evaluate)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split)
 
 if __name__ == '__main__':
     args = parse_args()

@@ -141,3 +141,27 @@ def verify_dataloader(dataloader, max_batch_num = -1):
     # Verify that the split is roughly 50%
     assert abs(positive_percentage - 50) <= 5, "Positive/negative split is not balanced (outside 45-55%)"
     print("Dataloader verification passed.")
+
+
+# finn
+# data/vgg_faces2_resized/train/n000397/0045_01_resized.png data/vgg_faces2_resized/train/n000280/0114_02_resized.png 1
+# data/vgg_faces2_resized/train/n000397/0147_01_resized.png data/vgg_faces2_resized/train/n000397/0265_01_resized.png 0
+# data/vgg_faces2_resized/train/n000397/0147_01_resized.png data/vgg_faces2_resized/train/n000157/0631_02_resized.png 1
+# data/vgg_faces2_resized/train/n000397/0265_01_resized.png data/vgg_faces2_resized/train/n000397/0036_04_resized.png 0
+# data/vgg_faces2_resized/train/n000397/0265_01_resized.png data/vgg_faces2_resized/train/n000190/0342_01_resized.png 1
+# data/vgg_faces2_resized/train/n000397/0036_04_resized.png data/vgg_faces2_resized/train/n000397/0175_01_resized.png 0
+# data/vgg_faces2_resized/train/n000397/0036_04_resized.png data/vgg_faces2_resized/train/n000299/0129_01_resized.png 1
+# data/vgg_faces2_resized/train/n000397/0175_01_resized.png data/vgg_faces2_resized/train/n000397/0456_01_resized.png 0
+# data/vgg_faces2_resized/train/n000397/0175_01_resized.png data/vgg_faces2_resized/train/n000130/0241_01_resized.png 1
+# data/vgg_faces2_resized/train/n000397/0456_01_resized.png data/vgg_faces2_resized/train/n000397/0037_01_resized.png 0
+
+# data/vgg_faces2_resized/train/n000094/0067_01_resized.png data/vgg_faces2_resized/train/n000277/0010_02_resized.png 1
+# data/vgg_faces2_resized/train/n000094/0019_01_resized.png data/vgg_faces2_resized/train/n000094/0323_01_resized.png 0
+# data/vgg_faces2_resized/train/n000094/0019_01_resized.png data/vgg_faces2_resized/train/n000011/0221_01_resized.png 1
+# data/vgg_faces2_resized/train/n000094/0027_01_resized.png data/vgg_faces2_resized/train/n000094/0219_01_resized.png 0
+# data/vgg_faces2_resized/train/n000094/0027_01_resized.png data/vgg_faces2_resized/train/n000305/0470_01_resized.png 1
+# data/vgg_faces2_resized/train/n000094/0082_01_resized.png data/vgg_faces2_resized/train/n000094/0388_01_resized.png 0
+# data/vgg_faces2_resized/train/n000094/0082_01_resized.png data/vgg_faces2_resized/train/n000482/0043_02_resized.png 1
+# data/vgg_faces2_resized/train/n000094/0187_01_resized.png data/vgg_faces2_resized/train/n000094/0215_01_resized.png 0
+# data/vgg_faces2_resized/train/n000094/0187_01_resized.png data/vgg_faces2_resized/train/n000146/0108_01_resized.png 1
+# data/vgg_faces2_resized/train/n000094/0079_01_resized.png data/vgg_faces2_resized/train/n000094/0203_01_resized.png 0
