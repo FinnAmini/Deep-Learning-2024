@@ -3,6 +3,7 @@ import numpy as np
 from keras import ops
 import matplotlib.pyplot as plt
 import os
+import sys
 from keras.preprocessing.image import load_img
 from keras.applications import ResNet50
 from keras.models import Model
@@ -26,14 +27,41 @@ def euclidean_distance(vects):
     x, y = vects
     return K.sqrt(K.sum(K.square(x - y), axis=1, keepdims=True))
 
-def build_model(input_shape):
+def build_model(input_shape, base_model=None):
     """Builds the Siamese network model."""
-    base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
-    base_model.trainable = False  
-    x = Flatten()(base_model.output)
-    x = BatchNormalization()(x)
-    x = Dense(128, activation="relu")(x)
-    embedding_network = Model(base_model.input, x)
+    embedding_network = None
+    if base_model is None:
+        base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
+        base_model.trainable = False  
+        x = Flatten()(base_model.output)
+        x = BatchNormalization()(x)
+        x = Dense(128, activation="relu")(x)
+        embedding_network = Model(base_model.input, x)
+    else:
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+        from Meilenstein2.deep_learning.train import (
+            custom_age_loss,
+            custom_gender_loss,
+            custom_age_metric,
+            custom_gender_metric,
+        )
+        base_model = tf.keras.models.load_model(
+            base_model,
+            custom_objects={
+                "BinaryCrossentropy": tf.keras.losses.BinaryCrossentropy,
+                "custom_age_loss": custom_age_loss,
+                "custom_gender_loss": custom_gender_loss,
+                "custom_age_metric": custom_age_metric,
+                "custom_gender_metric": custom_gender_metric,
+            },
+        )
+        # remove top layers
+        base_model = Model(base_model.input, base_model.layers[-13].output)
+        base_model.trainable = False
+        x = BatchNormalization()(base_model.output)
+        x = Dense(128, activation="relu")(x)
+        embedding_network = Model(base_model.input, x)
+    embedding_network.summary()
 
     # Define the two inputs for the Siamese network
     input_1 = Input(input_shape)
@@ -74,9 +102,9 @@ def plt_metric(history, metric, title, has_valid=True):
     plt.xlabel("epoch")
     plt.show()
 
-def train(data_path, batch_size, epochs, margin, name, val_split, visualize_data=False, evaluate=False):
+def train(data_path, batch_size, epochs, margin, name, val_split, visualize_data=False, evaluate=False, base_model=None):
     """Trains the Siamese network model."""
-    siamese = build_model(input_shape=(224, 224, 3))
+    siamese = build_model(input_shape=(224, 224, 3), base_model=base_model)
     siamese.compile(loss=loss(margin=margin), optimizer="adam", metrics=["accuracy"])
     siamese.summary()
 
@@ -194,6 +222,7 @@ def parse_args():
     train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
     train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
     train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
+    train_parser.add_argument("--base_model", "-bm", type=str, default=None, help="Path to the base model")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
 
@@ -218,7 +247,7 @@ def parse_args():
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.visualize_data, args.evaluate)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.visualize_data, args.evaluate, args.base_model)
 
 def test_handler(args):
     """Handler for the test command."""
