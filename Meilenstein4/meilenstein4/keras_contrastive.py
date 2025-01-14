@@ -17,8 +17,7 @@ from keras.layers import (
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from argparse import ArgumentParser
-from dataloading import verify_dataloader
-from paddata import create_dataloader
+from dataloading_contrastive import create_dataloader, verify_dataloader
 import datetime
 from tensorflow.keras.saving import register_keras_serializable
 
@@ -32,10 +31,11 @@ def build_model(input_shape, base_model=None):
     embedding_network = None
     if base_model is None:
         base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
-        base_model.trainable = False  
+        base_model.trainable = True  
         x = Flatten()(base_model.output)
         x = BatchNormalization()(x)
-        x = Dense(128, activation="relu")(x)
+        x = Dense(256, activation="relu")(x)
+        x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
         embedding_network = Model(base_model.input, x)
     else:
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
@@ -57,11 +57,10 @@ def build_model(input_shape, base_model=None):
         )
         # remove top layers
         base_model = Model(base_model.input, base_model.layers[-13].output)
-        base_model.trainable = False
+        base_model.trainable = True
         x = BatchNormalization()(base_model.output)
         x = Dense(128, activation="relu")(x)
         embedding_network = Model(base_model.input, x)
-    embedding_network.summary()
 
     # Define the two inputs for the Siamese network
     input_1 = Input(input_shape)

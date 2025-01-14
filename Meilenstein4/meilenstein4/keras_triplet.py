@@ -16,16 +16,10 @@ from keras.layers import (
 )
 import datetime
 import os
-from tripletdata import create_dataloader
+from dataloading_triplet import create_dataloader
 
 
 class DistanceLayer(layers.Layer):
-    """
-    This layer is responsible for computing the distance between the anchor
-    embedding and the positive embedding, and the anchor embedding and the
-    negative embedding.
-    """
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -34,97 +28,84 @@ class DistanceLayer(layers.Layer):
         an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
 
+    def get_config(self):
+        config = super().get_config()
+        return config
+
+
 class SiameseModel(Model):
-    """The Siamese Network model with a custom training and testing loops.
-
-    Computes the triplet loss using the three embeddings produced by the
-    Siamese Network.
-
-    The triplet loss is defined as:
-       L(A, P, N) = max(‖f(A) - f(P)‖² - ‖f(A) - f(N)‖² + margin, 0)
-    """
-
     def __init__(self, siamese_network, margin=0.5):
         super().__init__()
         self.siamese_network = siamese_network
         self.margin = margin
         self.loss_tracker = metrics.Mean(name="loss")
         self.accuracy_tracker = metrics.Mean(name="accuracy")
+        if siamese_network is not None:
+            self.siamese_network = siamese_network
+        else:
+            self.siamese_network = self.build_model(224, 224, 3)
 
     def call(self, inputs):
         return self.siamese_network(inputs)
 
     def train_step(self, data):
-        # GradientTape is a context manager that records every operation that
-        # you do inside. We are using it here to compute the loss so we can get
-        # the gradients and apply them using the optimizer specified in
-        # `compile()`.
         with tf.GradientTape() as tape:
             loss = self._compute_loss(data)
             accuracy = self._compute_accuracy(data)
 
-        # Storing the gradients of the loss function with respect to the
-        # weights/parameters.
         gradients = tape.gradient(loss, self.siamese_network.trainable_weights)
+        self.optimizer.apply_gradients(zip(gradients, self.siamese_network.trainable_weights))
 
-        # Applying the gradients on the model using the specified optimizer
-        self.optimizer.apply_gradients(
-            zip(gradients, self.siamese_network.trainable_weights)
-        )
-
-        # Let's update and return the training loss metric.
         self.loss_tracker.update_state(loss)
-        print('##############')
-        print(f"\nBatch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
-        print("Batch acc:", accuracy.numpy())
         self.accuracy_tracker.update_state(accuracy)
-        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
-        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
-        print(f"Batch - Tracker Accuracy: {self.accuracy_tracker.result().numpy()}")
-        return {"loss": self.loss_tracker.result().numpy(), "accuracy": self.accuracy_tracker.result().numpy()}
+        return {"loss": self.loss_tracker.result(), "accuracy": self.accuracy_tracker.result()}
 
     def test_step(self, data):
         loss = self._compute_loss(data)
         accuracy = self._compute_accuracy(data)
-        print('IM ALSO HERE')
-
-        # Let's update and return the loss metric.
         self.loss_tracker.update_state(loss)
         self.accuracy_tracker.update_state(accuracy)
         return {"loss": self.loss_tracker.result(), "accuracy": self.accuracy_tracker.result()}
 
     def _compute_loss(self, data):
-        # The output of the network is a tuple containing the distances
-        # between the anchor and the positive example, and the anchor and
-        # the negative example.
         ap_distance, an_distance = self.siamese_network(data)
-
-        # Computing the Triplet Loss by subtracting both distances and
-        # making sure we don't get a negative value.
-        loss = ap_distance - an_distance
-        loss = tf.maximum(loss + self.margin, 0.0)
-        return loss
+        loss = tf.maximum(0.0, ap_distance - an_distance + self.margin)
+        # loss = tf.nn.relu(ap_distance - an_distance + self.margin)
+        return tf.reduce_mean(loss)
 
     def _compute_accuracy(self, data):
-        # Correct predictions are when the anchor-positive distance is less than anchor-negative
         ap_distance, an_distance = self.siamese_network(data)
-        correct = tf.cast(ap_distance < an_distance, tf.float32)
-        accuracy = tf.reduce_mean(correct)
-        return accuracy
+        correct = tf.cast(ap_distance + self.margin < an_distance, tf.float32)
+        return tf.reduce_mean(correct)
 
     @property
     def metrics(self):
-        # We need to list our metrics here so the `reset_states()` can be
-        # called automatically.
         return [self.loss_tracker, self.accuracy_tracker]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "siamese_network": self.siamese_network,
+            "margin": self.margin
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        siamese_network = config.pop("siamese_network")
+        return cls(siamese_network=siamese_network, **config)
+
 
 def build_model(input_shape):
     """Builds the Siamese network model."""
     base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
-    base_model.trainable = False  
+    base_model.trainable = True  
     x = Flatten()(base_model.output)
     x = BatchNormalization()(x)
-    x = Dense(128, activation="relu")(x)
+    x = Dense(256, activation="relu")(x)
+    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    x = BatchNormalization()(x)
+    x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
     embedding = Model(base_model.input, x)
 
     anchor_input = layers.Input(name="anchor", shape=input_shape)
@@ -133,9 +114,9 @@ def build_model(input_shape):
 
     # Compute the distance between the embeddings
     distances = DistanceLayer()(
-        embedding(resnet.preprocess_input(anchor_input)),
-        embedding(resnet.preprocess_input(positive_input)),
-        embedding(resnet.preprocess_input(negative_input)),
+        embedding(anchor_input),
+        embedding(positive_input),
+        embedding(negative_input),
     )
 
     # Build the Siamese model
@@ -146,7 +127,7 @@ def build_model(input_shape):
 def train(data_path, batch_size, epochs, margin, name, val_split):
     model = build_model((224, 224, 3))
     siamese_model = SiameseModel(model, margin=margin)
-    siamese_model.compile(optimizer="adam", run_eagerly=True)
+    siamese_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
 
     train_log_dir = (f"logs/triplet/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)

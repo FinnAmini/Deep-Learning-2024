@@ -103,3 +103,41 @@ def create_dataloader(root_dir, img_width=224, img_height=224, batch_size=32, va
         train_data = _create_dataloader(train_pairs, img_width, img_height, batch_size)
         val_data = _create_dataloader(val_pairs, img_width, img_height, batch_size)
         return train_data, val_data
+
+def verify_dataloader(dataloader, max_batch_num = -1):
+    """Verifies that a dataloader works correctly and the positive/negative split is around 50%"""
+    positive_count = 0
+    negative_count = 0
+    total_samples = 0
+
+    for i, ((img1, img2), label) in enumerate(dataloader):
+        # Break after checking the specified number of batches
+        if max_batch_num > 0 and i >= max_batch_num:
+            break
+
+        if max_batch_num > 0:
+            print(f"Evaluating batch {i + 1} / {max_batch_num}...")
+        else:
+            print(f"Evaluating batch {i + 1}...")
+
+        # Check the shapes and types of the inputs
+        assert img1.shape == img2.shape, f"Image pair shapes don't match: {img1.shape} vs {img2.shape}"
+        assert img1.shape[1:] == (224, 224, 3), f"Unexpected image shape: {img1.shape[1:]}"
+        assert label.dtype == tf.int32, f"Unexpected label type: {label.dtype}"
+
+        # Count positive and negative labels
+        negative_count += tf.reduce_sum(label).numpy()
+        positive_count += (label.shape[0] - tf.reduce_sum(label).numpy())
+        total_samples += label.shape[0]
+
+    # Calculate the percentage of positive and negative samples
+    positive_percentage = (positive_count / total_samples) * 100
+    negative_percentage = (negative_count / total_samples) * 100
+
+    print(f"Total samples checked: {total_samples}")
+    print(f"Positive pairs: {positive_count} ({positive_percentage:.2f}%)")
+    print(f"Negative pairs: {negative_count} ({negative_percentage:.2f}%)")
+
+    # Verify that the split is roughly 50%
+    assert abs(positive_percentage - 50) <= 5, "Positive/negative split is not balanced (outside 45-55%)"
+    print("Dataloader verification passed.")
