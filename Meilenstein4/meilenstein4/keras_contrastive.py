@@ -108,7 +108,7 @@ def train(data_path, batch_size, epochs, margin, name, val_split, visualize_data
     siamese.summary()
 
     # Define log directory for TensorBoard
-    train_log_dir = (f"logs/contrastive/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    train_log_dir = (f"logs/triplet/model_{name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
 
     checkpoint_dir = './checkpoints/contrastive'

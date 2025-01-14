@@ -2,7 +2,7 @@
 
 # Define the script and base arguments
 SCRIPT="Meilenstein4/meilenstein4/keras_contrastive.py"
-BASE_ARGS="train -d Meilenstein2/data/vgg_faces2/train -b 32"
+BASE_ARGS="train -d /home/pmayer1/Data_Deep-Learning-2024/data/vgg_faces2/train -b 32"
 
 # Define the parameter values for -m
 M_VALUES=(0.2 0.4 0.6 0.8 1)
