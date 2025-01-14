@@ -135,7 +135,7 @@ def test(model_path, data_path, batch_size=32):
     test_data = create_dataloader(data_path, batch_size=batch_size, val_split=0)
     model.evaluate(test_data)
 
-def _pred_and_visualize(model, img1, img2, img1_path, img2_path):
+def _pred_and_visualize(model, img1, img2, img1_path, img2_path, id):
     """Predicts and visualizes the data."""
     prediction = model.predict([np.expand_dims(img1, axis=0), np.expand_dims(img2, axis=0)])
 
@@ -152,7 +152,7 @@ def _pred_and_visualize(model, img1, img2, img1_path, img2_path):
     plt.suptitle(f"Prediction: {prediction[0][0]:.4f}", fontsize=16)
     img1_name = "-".join(img1_path.split('/')[-2:])
     img2_name = "-".join(img2_path.split('/')[-2:])
-    plt.savefig(f"data/eval/{img1_name}#####{img2_name}.png")
+    plt.savefig(f"data/eval/{id}_{img1_name}#####{img2_name}.png")
 
     return round(prediction[0][0])
 
@@ -171,7 +171,7 @@ def evaluate_and_predict(model_path, data_path):
 
     total, pred_true, correct_true, correct_false = 0, 0, 0, 0
 
-    for _ in range(1000):
+    for i in range(1000):
         # positive example
         person1_dir = random.choice(people_dirs)
         person1_dir_path = os.path.join(data_path, person1_dir)
@@ -179,7 +179,7 @@ def evaluate_and_predict(model_path, data_path):
         img_2_path = os.path.join(person1_dir_path, random.choice([i for i in os.listdir(person1_dir_path) if i != img_1_path]))
         img_1 = load_img(img_1_path)
         img_2 = load_img(img_2_path)
-        pred = _pred_and_visualize(model, img_1, img_2, img_1_path, img_2_path)
+        pred = _pred_and_visualize(model, img_1, img_2, img_1_path, img_2_path, f"{i}_pos")
         if pred == 0:
             correct_true += 1
             pred_true += 1
@@ -190,7 +190,7 @@ def evaluate_and_predict(model_path, data_path):
         person2_dir_path = os.path.join(data_path, person2_dir)
         img_2_path = os.path.join(person2_dir_path, random.choice(os.listdir(person2_dir_path)))
         img_2 = load_img(img_2_path)
-        pred = _pred_and_visualize(model, img_1, img_2, img_1_path, img_2_path)
+        pred = _pred_and_visualize(model, img_1, img_2, img_1_path, img_2_path, f"{i}_neg")
         if pred == 1:
             correct_false += 1
         else:
@@ -218,7 +218,7 @@ def parse_args():
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--name", "-n", type=str, default="model.keras", help="Output model file")
-    train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
+    train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
     train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
     train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
     train_parser.add_argument("--base_model", "-bm", type=str, default=None, help="Path to the base model")

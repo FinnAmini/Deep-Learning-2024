@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from pathlib import Path
+import keras
 from keras import layers
 from keras import ops
 from keras import metrics
@@ -16,9 +17,13 @@ from keras.layers import (
 )
 import datetime
 import os
-from dataloading_triplet import create_dataloader
+# from dataloading_triplet import create_dataloader
+from tripletdata import create_dataloader
+import random
+from tripletdata import load_image
+from keras.preprocessing.image import load_img
 
-
+@keras.saving.register_keras_serializable()
 class DistanceLayer(layers.Layer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -28,15 +33,23 @@ class DistanceLayer(layers.Layer):
         an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
 
-    def get_config(self):
-        config = super().get_config()
-        return config
-
-
+@keras.saving.register_keras_serializable()
 class SiameseModel(Model):
-    def __init__(self, siamese_network, margin=0.5):
+    """The Siamese Network model with a custom training and testing loops.
+
+    Computes the triplet loss using the three embeddings produced by the
+    Siamese Network.
+
+    The triplet loss is defined as:
+       L(A, P, N) = max(‖f(A) - f(P)‖² - ‖f(A) - f(N)‖² + margin, 0)
+    """
+
+    def __init__(self, siamese_network=None, margin=0.5, **kwargs):
         super().__init__()
-        self.siamese_network = siamese_network
+        if siamese_network is not None:
+            self.siamese_network = siamese_network
+        else:
+            self.siamese_network = build_model((224, 224, 3))
         self.margin = margin
         self.loss_tracker = metrics.Mean(name="loss")
         self.accuracy_tracker = metrics.Mean(name="accuracy")
@@ -56,8 +69,22 @@ class SiameseModel(Model):
         gradients = tape.gradient(loss, self.siamese_network.trainable_weights)
         self.optimizer.apply_gradients(zip(gradients, self.siamese_network.trainable_weights))
 
+        # Applying the gradients on the model using the specified optimizer
+        self.optimizer.apply_gradients(
+            zip(gradients, self.siamese_network.trainable_weights)
+        )
+
+        # Let's update and return the training loss metric.
+
+        # print('\n\n##############')
+        # print("Batch - Tracker Loss before: ", self.loss_tracker.result().numpy())
+        # print(f"Batch - Tracker Accuracy before: {self.accuracy_tracker.result().numpy()}")
+        # print("Batch loss:", loss.numpy())
+        # print("Batch acc:", accuracy.numpy())
         self.loss_tracker.update_state(loss)
         self.accuracy_tracker.update_state(accuracy)
+        # print(f"Batch - Tracker Accuracy after: {self.accuracy_tracker.result().numpy()}")
+        # print(f"Batch - Tracker Loss after: {self.loss_tracker.result().numpy()}")
         return {"loss": self.loss_tracker.result(), "accuracy": self.accuracy_tracker.result()}
 
     def test_step(self, data):
@@ -70,7 +97,6 @@ class SiameseModel(Model):
     def _compute_loss(self, data):
         ap_distance, an_distance = self.siamese_network(data)
         loss = tf.maximum(0.0, ap_distance - an_distance + self.margin)
-        # loss = tf.nn.relu(ap_distance - an_distance + self.margin)
         return tf.reduce_mean(loss)
 
     def _compute_accuracy(self, data):
@@ -147,6 +173,74 @@ def train(data_path, batch_size, epochs, margin, name, val_split):
     siamese_model.fit(dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback, checkpoint_callback])
     siamese_model.save(f"models/triplet/{name}")
 
+def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
+    """Predicts and visualizes the data."""
+    anker = load_image(anker_path)
+    pos = load_image(pos_path)
+    neg = load_image(neg_path)
+
+    prediction = model.predict([
+        np.expand_dims(anker, axis=0),
+        np.expand_dims(pos, axis=0),
+        np.expand_dims(neg, axis=0)
+    ])
+
+    ap, an = prediction[0][0], prediction[1][0]
+
+    # Display the images and prediction
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    axes[0].imshow(load_img(anker_path))
+    axes[0].set_title("Anker")
+    axes[0].axis("off")
+
+    axes[1].imshow(load_img(pos_path))
+    axes[1].set_title("Positive")
+    axes[1].axis("off")
+
+    axes[2].imshow(load_img(neg_path))
+    axes[2].set_title("Negative")
+    axes[2].axis("off")
+
+    plt.suptitle(f"AP: {ap:.4f}, AP: {an:.4f}, Good: {ap < an}", fontsize=16)
+    anker_name = "-".join(anker_path.split('/')[-2:])
+    pos_name = "-".join(pos_path.split('/')[-2:])
+    neg_name = "-".join(neg_path.split('/')[-2:])
+    plt.savefig(f"data/eval/triplet/{id}_{anker_name}###{pos_name}###{neg_name}.png")
+
+    return ap, an
+
+def evaluate_and_predict(model_path, data_path):
+    """Evaluates the model and makes a prediction on a single example."""
+    model = tf.keras.models.load_model(
+        model_path,
+        custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
+    )
+
+    # Make a prediction with one example
+    people_dirs = sorted(os.listdir(data_path))
+
+    total, good, ap_dist_sum, an_dist_sum = 0, 0, 0, 0 
+
+    for i in range(1000):
+        # positive example and anker
+        person1_dir = random.choice(people_dirs)
+        person1_dir_path = os.path.join(data_path, person1_dir)
+        anker_path = os.path.join(person1_dir_path, random.choice(os.listdir(person1_dir_path)))
+        pos_path = os.path.join(person1_dir_path, random.choice([i for i in os.listdir(person1_dir_path) if i != anker_path]))
+        person2_dir = random.choice([p for p in people_dirs if p != person1_dir])
+        person2_dir_path = os.path.join(data_path, person2_dir)
+        neg_path = os.path.join(person2_dir_path, random.choice(os.listdir(person2_dir_path)))
+        ap, an = _pred_and_visualize(model, anker_path, pos_path, neg_path, i)
+        total += 1
+        if ap < an:
+            good += 1
+        ap_dist_sum += ap
+        an_dist_sum += an
+
+    print(f"Predicted {good} out of {total} examples correctly. - {good/total*100:.2f}%")
+    print(f"Avg. AP distance: {ap_dist_sum/good:.4f}")
+    print(f"Avg. AN distance: {an_dist_sum/good:.4f}")
+
 def parse_args():
     """Parse command-line arguments."""
     parser = ArgumentParser()
@@ -159,15 +253,24 @@ def parse_args():
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--name", "-n", type=str, default="model_triplet.keras", help="Output model file")
-    train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
+    train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
+
+    eval_parser = subparsers.add_parser("eval")
+    eval_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    eval_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    eval_parser.set_defaults(func=evaluate_and_predict_handler)
     
     return parser.parse_args()
 
 def train_handler(args):
     """Handler for the train command."""
     train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split)
+
+def evaluate_and_predict_handler(args):
+    """Handler for the evaluate command."""
+    evaluate_and_predict(args.model, args.data)
 
 if __name__ == '__main__':
     args = parse_args()
