@@ -17,10 +17,8 @@ from keras.layers import (
 )
 import datetime
 import os
-# from dataloading_triplet import create_dataloader
-from tripletdata import create_dataloader
+from dataloading_triplet import create_dataloader, load_image
 import random
-from tripletdata import load_image
 from keras.preprocessing.image import load_img
 
 @keras.saving.register_keras_serializable()
@@ -32,6 +30,33 @@ class DistanceLayer(layers.Layer):
         ap_distance = ops.sum(tf.square(anchor - positive), -1)
         an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
+
+def build_model(input_shape):
+    """Builds the Siamese network model."""
+    base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
+    base_model.trainable = True  
+    x = Flatten()(base_model.output)
+    x = BatchNormalization()(x)
+    x = Dense(256, activation="relu")(x)
+    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    x = BatchNormalization()(x)
+    x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
+    embedding = Model(base_model.input, x)
+
+    anchor_input = layers.Input(name="anchor", shape=input_shape)
+    positive_input = layers.Input(name="positive", shape=input_shape)
+    negative_input = layers.Input(name="negative", shape=input_shape)
+
+    # Compute the distance between the embeddings
+    distances = DistanceLayer()(
+        embedding(anchor_input),
+        embedding(positive_input),
+        embedding(negative_input),
+    )
+
+    # Build the Siamese model
+    siamese = Model(inputs=[anchor_input, positive_input, negative_input], outputs=distances)
+    return siamese
 
 @keras.saving.register_keras_serializable()
 class SiameseModel(Model):
@@ -46,17 +71,10 @@ class SiameseModel(Model):
 
     def __init__(self, siamese_network=None, margin=0.5, **kwargs):
         super().__init__()
-        if siamese_network is not None:
-            self.siamese_network = siamese_network
-        else:
-            self.siamese_network = build_model((224, 224, 3))
+        self.siamese_network = build_model((224, 224, 3))
         self.margin = margin
         self.loss_tracker = metrics.Mean(name="loss")
         self.accuracy_tracker = metrics.Mean(name="accuracy")
-        if siamese_network is not None:
-            self.siamese_network = siamese_network
-        else:
-            self.siamese_network = self.build_model(224, 224, 3)
 
     def call(self, inputs):
         return self.siamese_network(inputs)
@@ -108,51 +126,9 @@ class SiameseModel(Model):
     def metrics(self):
         return [self.loss_tracker, self.accuracy_tracker]
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "siamese_network": self.siamese_network,
-            "margin": self.margin
-        })
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        siamese_network = config.pop("siamese_network")
-        return cls(siamese_network=siamese_network, **config)
-
-
-def build_model(input_shape):
-    """Builds the Siamese network model."""
-    base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
-    base_model.trainable = True  
-    x = Flatten()(base_model.output)
-    x = BatchNormalization()(x)
-    x = Dense(256, activation="relu")(x)
-    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
-    x = BatchNormalization()(x)
-    x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
-    embedding = Model(base_model.input, x)
-
-    anchor_input = layers.Input(name="anchor", shape=input_shape)
-    positive_input = layers.Input(name="positive", shape=input_shape)
-    negative_input = layers.Input(name="negative", shape=input_shape)
-
-    # Compute the distance between the embeddings
-    distances = DistanceLayer()(
-        embedding(anchor_input),
-        embedding(positive_input),
-        embedding(negative_input),
-    )
-
-    # Build the Siamese model
-    siamese = Model(inputs=[anchor_input, positive_input, negative_input], outputs=distances)
-    return siamese
-
 
 def train(data_path, batch_size, epochs, margin, name, val_split):
-    model = build_model((224, 224, 3))
-    siamese_model = SiameseModel(model, margin=margin)
+    siamese_model = SiameseModel(margin=margin)
     siamese_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
 
     train_log_dir = (f"logs/triplet/model_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
@@ -201,7 +177,7 @@ def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
     axes[2].set_title("Negative")
     axes[2].axis("off")
 
-    plt.suptitle(f"AP: {ap:.4f}, AP: {an:.4f}, Good: {ap < an}", fontsize=16)
+    plt.suptitle(f"AP: {ap:.4f}, AN: {an:.4f}, Good: {ap < an}", fontsize=16)
     anker_name = "-".join(anker_path.split('/')[-2:])
     pos_name = "-".join(pos_path.split('/')[-2:])
     neg_name = "-".join(neg_path.split('/')[-2:])
@@ -211,10 +187,12 @@ def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
 
 def evaluate_and_predict(model_path, data_path):
     """Evaluates the model and makes a prediction on a single example."""
+    print('right now')
     model = tf.keras.models.load_model(
         model_path,
         custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
     )
+    print('right here')
 
     # Make a prediction with one example
     people_dirs = sorted(os.listdir(data_path))
@@ -241,6 +219,15 @@ def evaluate_and_predict(model_path, data_path):
     print(f"Avg. AP distance: {ap_dist_sum/good:.4f}")
     print(f"Avg. AN distance: {an_dist_sum/good:.4f}")
 
+def test(model_path, data_path, batch_size=32):
+    """Tests the Siamese network model."""
+    model = tf.keras.models.load_model(
+        model_path,
+        custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
+    )
+    test_data = create_dataloader(data_path, batch_size=batch_size, val_split=0)
+    model.evaluate(test_data)
+
 def parse_args():
     """Parse command-line arguments."""
     parser = ArgumentParser()
@@ -257,6 +244,12 @@ def parse_args():
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
 
+    test_parser = subparsers.add_parser("test")
+    test_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    test_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    test_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
+    test_parser.set_defaults(func=test_handler)
+
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
     eval_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
@@ -267,6 +260,10 @@ def parse_args():
 def train_handler(args):
     """Handler for the train command."""
     train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split)
+
+def test_handler(args):
+    """Handler for the test command."""
+    test(args.model, args.data, args.batch_size)
 
 def evaluate_and_predict_handler(args):
     """Handler for the evaluate command."""
