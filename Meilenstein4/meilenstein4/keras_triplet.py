@@ -20,6 +20,13 @@ import os
 from dataloading_triplet import create_dataloader, load_image
 import random
 from keras.preprocessing.image import load_img
+from collections import defaultdict
+import json
+import shutil
+
+def calc_distance(anchor, reference):
+    """Calculates the distance between the anchor and the reference embeddings."""
+    return ops.sum(tf.square(anchor - reference), -1)
 
 @keras.saving.register_keras_serializable()
 class DistanceLayer(layers.Layer):
@@ -27,12 +34,12 @@ class DistanceLayer(layers.Layer):
         super().__init__(**kwargs)
 
     def call(self, anchor, positive, negative):
-        ap_distance = ops.sum(tf.square(anchor - positive), -1)
-        an_distance = ops.sum(tf.square(anchor - negative), -1)
+        ap_distance = calc_distance(anchor, positive)
+        an_distance = calc_distance(anchor, negative)
         return (ap_distance, an_distance)
 
-def build_model(input_shape):
-    """Builds the Siamese network model."""
+def build_embedding(input_shape):
+    """Builds the embedding network."""
     base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
     base_model.trainable = True  
     x = Flatten()(base_model.output)
@@ -42,21 +49,26 @@ def build_model(input_shape):
     x = BatchNormalization()(x)
     x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
     embedding = Model(base_model.input, x)
+    return embedding
 
+
+def build_model(input_shape):
+    """Builds the Siamese network model."""
     anchor_input = layers.Input(name="anchor", shape=input_shape)
     positive_input = layers.Input(name="positive", shape=input_shape)
     negative_input = layers.Input(name="negative", shape=input_shape)
+    embedding = build_embedding(input_shape)
+
+    a = embedding(anchor_input),
+    b = embedding(positive_input)
+    c = embedding(negative_input)
 
     # Compute the distance between the embeddings
-    distances = DistanceLayer()(
-        embedding(anchor_input),
-        embedding(positive_input),
-        embedding(negative_input),
-    )
+    distances = DistanceLayer()(a, b, c)
 
     # Build the Siamese model
     siamese = Model(inputs=[anchor_input, positive_input, negative_input], outputs=distances)
-    return siamese
+    return siamese, embedding
 
 @keras.saving.register_keras_serializable()
 class SiameseModel(Model):
@@ -71,12 +83,20 @@ class SiameseModel(Model):
 
     def __init__(self, siamese_network=None, margin=0.5, **kwargs):
         super().__init__()
-        self.siamese_network = build_model((224, 224, 3))
+        siamese, embedding = build_model((224, 224, 3))
+        self.siamese_network = siamese
+        self.embedding = embedding 
         self.margin = margin
         self.loss_tracker = metrics.Mean(name="loss")
         self.accuracy_tracker = metrics.Mean(name="accuracy")
+        self.use_embedding = False
+
+    def set_use_embedding(self, use):
+        self.use_embedding = use
 
     def call(self, inputs):
+        if self.use_embedding:
+            return self.embedding(inputs)
         return self.siamese_network(inputs)
 
     def train_step(self, data):
@@ -121,6 +141,9 @@ class SiameseModel(Model):
         ap_distance, an_distance = self.siamese_network(data)
         correct = tf.cast(ap_distance + self.margin < an_distance, tf.float32)
         return tf.reduce_mean(correct)
+
+    def set_eval(self):
+        self.siamese_network.eval()
 
     @property
     def metrics(self):
@@ -187,14 +210,7 @@ def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
 
 def evaluate_and_predict(model_path, data_path):
     """Evaluates the model and makes a prediction on a single example."""
-    print('right now')
-    model = tf.keras.models.load_model(
-        model_path,
-        custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
-    )
-    print('right here')
-
-    # Make a prediction with one example
+    model = load_model(model_path)
     people_dirs = sorted(os.listdir(data_path))
 
     total, good, ap_dist_sum, an_dist_sum = 0, 0, 0, 0 
@@ -221,12 +237,164 @@ def evaluate_and_predict(model_path, data_path):
 
 def test(model_path, data_path, batch_size=32):
     """Tests the Siamese network model."""
+    model = load_model(model_path)
+    test_data = create_dataloader(data_path, batch_size=batch_size, val_split=0)
+    model.evaluate(test_data)
+
+def get_people_paths(data_path):
+    people = [p for p in os.scandir(data_path) if p.is_dir()]
+    data = defaultdict(list)
+    for person in people:
+        for image_file in os.scandir(person.path):
+            if image_file.name.split('.')[-1].lower() in ['jpg', 'jpeg', 'png']:
+                data[person.name].append(image_file.path)
+    return data
+
+def pred_all(model, data_path):
+    """Predicts all data in the dataloader."""
+    data = get_people_paths(data_path)
+    pos_preds, neg_preds = [], []
+
+    for label, image_paths in data.items():
+        anchors, pos, neg = [], [], []
+        print(label, len(image_paths))
+        for anchor in image_paths:
+            positive = random.choice([ip for ip in image_paths if ip != anchor])
+            negative_person = random.choice([l for l in data.keys() if l != label])
+            negative = random.choice(data[negative_person])
+
+            anchor_img = load_image(anchor)
+            positive_img = load_image(positive)
+            negative_img = load_image(negative)
+
+            anchors.append(anchor_img)
+            pos.append(positive_img)
+            neg.append(negative_img)
+
+            break
+
+        anchors = np.array(anchors)
+        pos = np.array(pos)
+        neg = np.array(neg)
+        print(anchors.shape, pos.shape, neg.shape)
+        pred = model.predict([anchors, pos, neg])
+        pos_preds.extend(pred[0])
+        neg_preds.extend(pred[1])
+    return pos_preds, neg_preds
+
+def find_optimal_threshold(positive_distances, negative_distances):
+    """Find the threshold that maximizes accuracy."""
+    thresholds = np.linspace(0, max(max(positive_distances), max(negative_distances)), 1000)
+    best_threshold, best_accuracy = 0, 0
+    pos_acc, neg_acc = 0, 0
+    print(f"Evaluating {len(positive_distances)} positive and {len(negative_distances)} negative distances.")
+    
+    for threshold in thresholds:
+        positive_correct = positive_distances < threshold
+        negative_correct = negative_distances >= threshold
+        
+        # Accuracy
+        accuracy = (positive_correct.sum() + negative_correct.sum()) / (len(positive_distances) + len(negative_distances))
+        pos_accuracy = positive_correct.sum() / len(positive_distances)
+        neg_accuracy = negative_correct.sum() / len(negative_distances)
+        
+        if accuracy > best_accuracy:
+            best_accuracy = accuracy
+            best_threshold = threshold
+            pos_acc = pos_accuracy
+            neg_acc = neg_accuracy
+    
+    return best_threshold, best_accuracy, pos_acc, neg_acc
+
+def load_model(model_path, use_embedding=False):
     model = tf.keras.models.load_model(
         model_path,
         custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
     )
-    test_data = create_dataloader(data_path, batch_size=batch_size, val_split=0)
-    model.evaluate(test_data)
+    if use_embedding:
+        model.set_use_embedding(True)
+    return model
+
+def find_threshold(model_path, data_path):
+    """Function for find a good threshold"""
+    model = load_model(model_path)
+    pos, neg = pred_all(model, data_path)
+    thresh, acc, pos_acc, neg_acc = find_optimal_threshold(pos, neg)
+
+    print(f"Best accuracy: {acc:.4f} with threshold: {thresh:.4f}")
+    print(f"Positive accuracy: {pos_acc:.4f}, Negative accuracy: {neg_acc:.4f}")
+
+def save_embeddings(model_path, data_path):
+    """Function to get embeddings"""
+    model = load_model(model_path, True)
+    data = get_people_paths(data_path)
+    embeddings = {}
+    paths, ank = [], []
+
+    for image_paths in data.values():
+        for anchor in image_paths:
+            anchor_img = load_image(anchor)
+            paths.append(anchor)
+            ank.append(anchor_img)
+
+    anchor_embedding = model.predict([np.array(ank), np.array(ank), np.array(ank)])
+    for i, path in enumerate(paths):
+        embeddings[path] = anchor_embedding[i].tolist()
+    
+    with open('data/json/db.json', 'w') as file:
+        json.dump(embeddings, file, indent=4)
+
+def add_embedding(model, data_path):
+    """Function to add embeddings"""
+    if type(model) == str:
+        model = load_model(model, True)
+    with open('data/json/db.json', 'r') as file:
+        embeddings = json.load(file)
+    img = load_image(data_path)
+    embedding = model.predict(np.array(img))
+    embeddings[data_path] = embedding.tolist()
+    with open('data/json/db.json', 'w') as file:
+        json.dump(embeddings, file, indent=4)
+
+def recognize(model, img_path):
+    """Function to recognize people"""
+    if not os.path.exists('data/json/db.json'):
+        print("No embeddings found. Please run the embedding command first.")
+        return
+
+    if type(model) == str:
+        model = load_model(model, True)
+    closest, furthest, same = (None, float("inf")), (None, 0), (None, 0)
+    with open('data/json/db.json', 'r') as file:
+        embeddings = json.load(file)
+    
+    img = load_image(img_path)
+    embedding = model.predict(np.array([img]))
+    for path, emb in embeddings.items():
+        distance = calc_distance(embedding, np.array(emb))[0]
+
+        if path == img_path:
+            same = (path, distance)
+        else:
+            if distance < closest[1]:
+                closest = (path, distance)
+            if distance > furthest[1]:
+                furthest = (path, distance)
+
+    if same[0]:
+        print(f"Same person: {same[0]} with distance {same[1]:.4f}")
+    print(f"Closest match: {closest[0]} with distance {closest[1]:.4f}")
+    print(f"Furthest match: {furthest[0]} with distance {furthest[1]:.4f}")
+
+    name = Path(img_path).parent.name + Path(img_path).stem
+    os.makedirs(f'data/compared/recognition/{name}', exist_ok=True)
+    shutil.copy(img_path, f'data/compared/recognition/{name}/input.jpg')
+    shutil.copy(closest[0], f'data/compared/recognition/{name}/closest_{closest[1]}.jpg')
+    shutil.copy(furthest[0], f'data/compared/recognition/{name}/furthest_{furthest[1]}.jpg')
+    if same[0]:
+        shutil.copy(same[0], f'data/compared/recognition/{name}/same_{same[1]}.jpg')
+
+
 
 def parse_args():
     """Parse command-line arguments."""
@@ -255,6 +423,21 @@ def parse_args():
     eval_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
     eval_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
     eval_parser.set_defaults(func=evaluate_and_predict_handler)
+
+    threshold_parser = subparsers.add_parser("threshold")
+    threshold_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    threshold_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    threshold_parser.set_defaults(func=threshold_handler)
+
+    embedding_parser = subparsers.add_parser("embedding")
+    embedding_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    embedding_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    embedding_parser.set_defaults(func=embedding_handler)
+
+    recognize_parser = subparsers.add_parser("recognize")
+    recognize_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
+    recognize_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    recognize_parser.set_defaults(func=recognize_handler)
     
     return parser.parse_args()
 
@@ -269,6 +452,18 @@ def test_handler(args):
 def evaluate_and_predict_handler(args):
     """Handler for the evaluate command."""
     evaluate_and_predict(args.model, args.data)
+
+def threshold_handler(args):
+    """Handler for the threshold command."""
+    find_threshold(args.model, args.data)
+
+def embedding_handler(args):
+    """Handler for the embedding command."""
+    save_embeddings(args.model, args.data)
+
+def recognize_handler(args):
+    """Handler for the recognize command."""
+    recognize(args.model, args.data)
 
 if __name__ == '__main__':
     args = parse_args()
