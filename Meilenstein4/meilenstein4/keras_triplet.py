@@ -127,9 +127,9 @@ class SiameseModel(Model):
         return [self.loss_tracker, self.accuracy_tracker]
 
 
-def train(data_path, batch_size, epochs, margin, name, val_split):
+def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.0001):
     siamese_model = SiameseModel(margin=margin)
-    siamese_model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
+    siamese_model.compile(optimizer=tf.keras.optimizers.Adam(lr))
 
     train_log_dir = (f"logs/triplet/model_{name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
@@ -241,6 +241,7 @@ def parse_args():
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--name", "-n", type=str, default="model_triplet.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
+    train_parser.add_argument("--learning_rate", "-lr", type=float, default=0.0001, help="Learning rate")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
 
@@ -259,7 +260,7 @@ def parse_args():
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.learning_rate)
 
 def test_handler(args):
     """Handler for the test command."""
