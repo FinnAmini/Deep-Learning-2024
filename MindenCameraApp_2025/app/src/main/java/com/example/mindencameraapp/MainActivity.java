@@ -360,7 +360,7 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
                 .build();
 
         return new Retrofit.Builder()
-                .baseUrl("http://10.0.2.2:5000/") // Replace with your backend URL
+                .baseUrl("http://0.0.0.0:5000/") // Replace with your backend URL
                 .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
