@@ -2,6 +2,9 @@ import keras
 import tensorflow as tf
 import numpy as np
 from PIL import Image
+import json
+
+THRESHOLD = 1.0222
 
 def calc_distance(anchor, reference):
     """Calculates the distance between the anchor and the reference embeddings."""
@@ -82,7 +85,28 @@ class MLManager:
             custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
         )
 
-    def recognize(self, path):
+    def calc_embedding(self, path):
         img = np.array([load_image(path)])
         embedding = self.model.predict(img)
-        print('embedding:', embedding)
+        print(embedding)
+        return embedding
+
+    def recognize(self, embedding, n=5):
+        """Function to recognize people"""
+        with open('db.json', 'r') as file:
+            embeddings = json.load(file)
+
+        distances = []
+        for path, emb in embeddings.items():
+            distance = calc_distance(embedding, np.array(emb))[0]
+            distances.append({
+                "distance": float(distance),
+                "path": path,
+                "recognized": bool(distance <= THRESHOLD)
+            })
+
+        distances.sort(key=lambda x: x["distance"])
+        closest_n = distances[:n]
+        furthest_n = distances[-n:]
+
+        return closest_n, furthest_n

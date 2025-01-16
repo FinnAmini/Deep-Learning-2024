@@ -7,7 +7,7 @@ android {
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.example.mindencameraapp"
+        applicationId "com.example.dl_recognizer"
         minSdk 21
         targetSdk 33
         versionCode 1
@@ -15,7 +15,7 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         minSdkVersion 24
-        targetSdkVersion 31
+        targetSdkVersion 33
     }
 
     buildTypes {

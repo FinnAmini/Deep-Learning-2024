@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import styles from "./styles.module.css";
 
-const InputBox = ({ fn }) => {
+const InputBox = ({ setSimilar, setDifferent }) => {
     const [image, setImage] = useState(null);
     const [isHovering, setIsHovering] = useState(false);
 
@@ -24,7 +24,6 @@ const InputBox = ({ fn }) => {
             reader.onload = () => {
                 setImage(reader.result);
                 uploadImage(file);
-                fn(file);
             };
             reader.readAsDataURL(file);
         }
@@ -42,6 +41,8 @@ const InputBox = ({ fn }) => {
 
             if (response.ok) {
                 const data = await response.json();
+                setSimilar(data.closest)
+                setDifferent(data.furthest)
                 console.log("Image uploaded successfully:", data);
             } else {
                 console.error("Failed to upload image:", response.statusText);
@@ -57,34 +58,36 @@ const InputBox = ({ fn }) => {
     };
 
     return (
-        <div
-            className={`flex justify-center items-center mt-8 relative bg-gray-900  
+        <form onSubmit={handleSubmit}>
+            <div
+                className={`flex justify-center items-center mt-8 relative bg-gray-900  
                 ${styles.wrapper} 
                 ${isHovering && "opacity-20 bg-gray-900"}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-        >
-            {image && (
-                <img
-                    src={image}
-                    alt="Dropped"
-                    className="max-w-full max-h-full object-contain"
-                />
-            )}
-            {!image && !isHovering && (
-                <div
-                    style={{
-                        fontSize: "18px",
-                        color: "#888",
-                        textAlign: "center",
-                    }}
-                >
-                    Drag and drop an image here
-                </div>
-            )}
-        </div>
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+            >
+                {image && (
+                    <img
+                        src={image}
+                        alt="Dropped"
+                        className="max-w-full max-h-full object-contain"
+                    />
+                )}
+                {!image && !isHovering && (
+                    <div
+                        style={{
+                            fontSize: "18px",
+                            color: "#888",
+                            textAlign: "center",
+                        }}
+                    >
+                        Drag and drop an image here
+                    </div>
+                )}
+            </div>
+        </form>
     );
 };
 
-export default InputBox;
+            export default InputBox;

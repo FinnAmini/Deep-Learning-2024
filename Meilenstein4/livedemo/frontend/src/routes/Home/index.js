@@ -7,26 +7,27 @@ const Home = () => {
     const [similar, setSimilar] = useState([]);
     const [different, setDifferent] = useState([]);
 
-    const imageChanged = async (file) => {
-        console.log('image changed')
-    }
-
     return (
         <div className="flex flex-col items-center">
-            <h1 className="text-5xl mt-4">Face Recognizer</h1>
-            <InputBox fn={imageChanged} />
-            <div className="mt-16 flex flex-col w-10/12">
-                <div>
-                    <label className="text-4xl w-20">Ähnlich</label>
+            {/*<h1 className="text-5xl mt-4">Face Recognizer</h1>*/}
+            <InputBox setSimilar={setSimilar} setDifferent={setDifferent} />
+            <div className="mt-8 flex flex-col">
+                <div className="flex flex-col items-center">
+                    <label className="text-4xl mb-2">Ähnlich</label>
                     <div className="flex">
                         {similar.map((item, idx) => (
-                            <ImageBox positive={true} img={item} key={idx} difference={0.5} />
+                            <ImageBox positive={true} key={idx} values={item}/>
                         ))}
                     </div>
                 </div>
-                <hr className="my-2" />
-                <div>
-                    <label className="text-4xl w-20">Unterschiedlich</label>
+                {/*<hr className="my-2"/>*/}
+                <div className="flex flex-col items-center">
+                    <label className="text-4xl mb-2">Unterschiedlich</label>
+                    <div className="flex">
+                        {different.map((item, idx) => (
+                            <ImageBox positive={true} key={idx} values={item}/>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
