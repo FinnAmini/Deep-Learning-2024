@@ -24,9 +24,19 @@ def api_recognize():
 
 
     image_path = save_image(image)
-    recognized = ml_manager.recognize(image_path)
 
-    return jsonify({"message": "Image uploaded and saved successfully", "path": image_path}), 200
+ # Check for the 'recognize' query parameter
+    recognize_param = request.args.get('recognize', 'false').lower()  # Default to 'false' if not provided
+    if recognize_param == 'true':
+        # Perform recognition
+        recognized = ml_manager.recognize(image_path)
+        return jsonify({"message": "Image uploaded and recognized successfully", 
+                        "path": image_path, 
+                        "recognition": recognized}), 200
+    else:
+        # Only save the image
+        return jsonify({"message": "Image uploaded and saved successfully", 
+                        "path": image_path}), 200
 
 def save_image(image):
     image_path = os.path.join(UPLOAD_FOLDER, f"reference.{image.filename.split('.')[-1]}")

@@ -85,9 +85,11 @@ import java.util.concurrent.ExecutorService;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
 import okhttp3.RequestBody;
 import okhttp3.ResponseBody;
 
+import okhttp3.logging.HttpLoggingInterceptor;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -349,6 +351,20 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
             }
         }
     }
+    private Retrofit getRetrofitInstance() {
+        HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
+        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(loggingInterceptor)
+                .build();
+
+        return new Retrofit.Builder()
+                .baseUrl("http://10.0.2.2:5000/") // Replace with your backend URL
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+    }
 
     // Method to send the image to the backend
     private void sendImage(Bitmap bitmap, Boolean recognize) {
@@ -356,18 +372,14 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
         File file = createTempFileFromBitmap(bitmap);
 
         if (file != null) {
-            // Create Retrofit instance
-            Retrofit retrofit = new Retrofit.Builder()
-                    .baseUrl("https://yourbackend.com/") // Replace with your backend URL
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build();
+            Retrofit retrofit = getRetrofitInstance();
 
             // Get API service
             ApiService apiService = retrofit.create(ApiService.class);
 
             // Create RequestBody and MultipartBody.Part
             RequestBody requestBody = RequestBody.create(MediaType.parse("image/png"), file);
-            MultipartBody.Part body = MultipartBody.Part.createFormData("file", file.getName(), requestBody);
+            MultipartBody.Part body = MultipartBody.Part.createFormData("image", file.getName(), requestBody);
 
             // Make the API call
             Call<ResponseBody> call = apiService.uploadImage(body, recognize);
@@ -376,7 +388,23 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
                 @Override
                 public void onResponse(@NonNull Call<ResponseBody> call, @NonNull Response<ResponseBody> response) {
                     if (response.isSuccessful() && response.body() != null) {
-                        Log.d("Debug", "Image uploaded successfully");
+                        try {
+                            // Parse the response body
+                            String responseBody = response.body().string();
+                            Log.d("Debug", "Response: " + responseBody);
+
+                            // Determine the success message based on the response
+                            if (recognize) {
+                                // Recognition response
+                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Image recognized and uploaded successfully!", Toast.LENGTH_LONG).show());
+                            } else {
+                                // Save-only response
+                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Image uploaded and saved successfully!", Toast.LENGTH_LONG).show());
+                            }
+                        } catch (IOException e) {
+                            Log.e("Debug", "Error reading response body", e);
+                            runOnUiThread(() -> Toast.makeText(MainActivity.this, "An error occurred while processing the response.", Toast.LENGTH_LONG).show());
+                        }
                     } else {
                         Log.e("Debug", "Failed to upload image: " + (response.errorBody() != null ? response.errorBody().toString() : "Unknown error"));
                     }
