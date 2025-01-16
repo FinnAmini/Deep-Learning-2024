@@ -1,0 +1,15 @@
+beetle
+butterfly
+cat
+cow
+dog
+elephant
+gorilla
+hippo
+lizard
+monkey
+mouse
+panda
+spider
+tiger
+zebra
