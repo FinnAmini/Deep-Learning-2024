@@ -7,7 +7,7 @@ android {
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.example.dl_recognizer"
+        applicationId "com.example.dl_recognizer2"
         minSdk 21
         targetSdk 33
         versionCode 1
@@ -15,7 +15,7 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         minSdkVersion 24
-        targetSdkVersion 33
+        targetSdkVersion 31
     }
 
     buildTypes {
@@ -59,5 +59,7 @@ dependencies {
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.9.3'
+
+    implementation 'org.json:json:20210307' // Explicit JSON library dependency
 
 }

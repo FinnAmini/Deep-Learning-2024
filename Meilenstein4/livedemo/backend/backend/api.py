@@ -53,6 +53,11 @@ def api_recognize():
 
     if not allowed_file(image.filename):
         return jsonify({"error": "Invalid file type"}), 400
+    
+    file_path = 'db.json'
+    if not os.path.exists(file_path):
+        with open(file_path, 'w') as file:
+            json.dump({}, file)
 
     recognize_param = request.args.get('recognize', 'false').lower()
     image_path, name = save_image(image)

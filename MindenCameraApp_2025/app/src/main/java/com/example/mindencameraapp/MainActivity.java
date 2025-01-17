@@ -56,6 +56,9 @@ import android.widget.Toast;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.support.common.FileUtil;
@@ -360,7 +363,7 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
                 .build();
 
         return new Retrofit.Builder()
-                .baseUrl("http://0.0.0.0:5000/") // Replace with your backend URL
+                .baseUrl("http://192.168.137.1:5000/") // Replace with your backend URL
                 .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
@@ -393,30 +396,51 @@ public class MainActivity extends AppCompatActivity implements ImageAnalysis.Ana
                             String responseBody = response.body().string();
                             Log.d("Debug", "Response: " + responseBody);
 
-                            // Determine the success message based on the response
+                            // Parse the response JSON
+                            JSONObject jsonResponse = new JSONObject(responseBody);
+                            String message = jsonResponse.optString("message", "No message received");
+
                             if (recognize) {
-                                // Recognition response
-                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Image recognized and uploaded successfully!", Toast.LENGTH_LONG).show());
+                                // Handle recognition response
+                                JSONArray closestArray = jsonResponse.optJSONArray("closest");
+
+                                if (closestArray != null && closestArray.length() > 0) {
+                                    JSONObject closestObject = closestArray.getJSONObject(0);
+                                    boolean recognized = closestObject.optBoolean("recognized", false);
+
+                                    if (recognized) {
+                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition successful: " + message, Toast.LENGTH_LONG).show());
+                                    } else {
+                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition failed: No matches found.", Toast.LENGTH_LONG).show());
+                                    }
+                                } else {
+                                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition failed: No data received.", Toast.LENGTH_LONG).show());
+                                }
                             } else {
                                 // Save-only response
-                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Image uploaded and saved successfully!", Toast.LENGTH_LONG).show());
+                                runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show());
                             }
-                        } catch (IOException e) {
-                            Log.e("Debug", "Error reading response body", e);
+                        } catch (IOException | JSONException e) {
+                            Log.e("Debug", "Error parsing response body", e);
                             runOnUiThread(() -> Toast.makeText(MainActivity.this, "An error occurred while processing the response.", Toast.LENGTH_LONG).show());
                         }
                     } else {
+                        // Handle error response
                         Log.e("Debug", "Failed to upload image: " + (response.errorBody() != null ? response.errorBody().toString() : "Unknown error"));
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to upload the image.", Toast.LENGTH_LONG).show());
                     }
                 }
 
                 @Override
                 public void onFailure(@NonNull Call<ResponseBody> call, @NonNull Throwable t) {
                     Log.e("Debug", "Error uploading image", t);
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to upload the image.", Toast.LENGTH_LONG).show());
                 }
             });
         } else {
             Log.d("Debug", "File is null");
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, "File is null.", Toast.LENGTH_LONG).show());
+
         }
     }
 

@@ -23,19 +23,6 @@
             android:background="@android:color/transparent"
             android:orientation="vertical">
 
-            <androidx.appcompat.widget.Toolbar
-                android:id="@+id/toolbar2"
-                android:layout_width="wrap_content"
-                android:layout_height="70dp"
-                android:background="?attr/colorPrimary"
-                android:minHeight="?attr/actionBarSize"
-                android:theme="?attr/actionBarTheme">
-
-            <ImageView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-            </androidx.appcompat.widget.Toolbar>
-
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
