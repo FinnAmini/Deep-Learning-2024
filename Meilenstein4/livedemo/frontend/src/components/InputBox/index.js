@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import styles from "./styles.module.css";
 
-const InputBox = ({ setSimilar, setDifferent }) => {
+const InputBox = ({ loadData, setLoading }) => {
     const [image, setImage] = useState(null);
     const [isHovering, setIsHovering] = useState(false);
 
@@ -17,6 +17,7 @@ const InputBox = ({ setSimilar, setDifferent }) => {
     const handleDrop = (event) => {
         event.preventDefault();
         setIsHovering(false);
+        setLoading(true);
 
         const file = event.dataTransfer.files[0];
         if (file && file.type.startsWith("image/")) {
@@ -41,8 +42,7 @@ const InputBox = ({ setSimilar, setDifferent }) => {
 
             if (response.ok) {
                 const data = await response.json();
-                setSimilar(data.closest)
-                setDifferent(data.furthest)
+                loadData(data)
                 console.log("Image uploaded successfully:", data);
             } else {
                 console.error("Failed to upload image:", response.statusText);
