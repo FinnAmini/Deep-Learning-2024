@@ -23,6 +23,7 @@ from keras.preprocessing.image import load_img
 from collections import defaultdict
 import json
 import shutil
+import pickle
 
 def calc_distance(anchor, reference):
     """Calculates the distance between the anchor and the reference embeddings."""
@@ -256,8 +257,8 @@ def pred_all(model, data_path):
     pos_preds, neg_preds = [], []
 
     for label, image_paths in data.items():
-        anchors, pos, neg = [], [], []
         print(label, len(image_paths))
+        anchors, pos, neg = [], [], []
         for anchor in image_paths:
             positive = random.choice([ip for ip in image_paths if ip != anchor])
             negative_person = random.choice([l for l in data.keys() if l != label])
@@ -271,29 +272,43 @@ def pred_all(model, data_path):
             pos.append(positive_img)
             neg.append(negative_img)
 
-            break
-
         anchors = np.array(anchors)
         pos = np.array(pos)
         neg = np.array(neg)
-        print(anchors.shape, pos.shape, neg.shape)
         pred = model.predict([anchors, pos, neg])
-        pos_preds.extend(pred[0])
-        neg_preds.extend(pred[1])
+
+        if isinstance(pred[0], tf.RaggedTensor):
+            pos_flattened = pred[0].flat_values.numpy().tolist()
+            neg_flattened = pred[1].flat_values.numpy().tolist()
+        else:
+            pos_flattened = pred[0].flatten().tolist()
+            neg_flattened = pred[1].flatten().tolist()
+        pos_preds.extend(pos_flattened)
+        neg_preds.extend(neg_flattened)
+
     return pos_preds, neg_preds
 
 def find_optimal_threshold(positive_distances, negative_distances):
-    """Find the threshold that maximizes accuracy."""
-    thresholds = np.linspace(0, max(max(positive_distances), max(negative_distances)), 1000)
+    """
+    Find the threshold that maximizes accuracy, assuming inputs are always tf.RaggedTensor.
+    """
+    # Calculate the maximum values for threshold range
+    max_pos_dist = np.max(positive_distances)
+    max_neg_dist = np.max(negative_distances)
+    
+    # Generate thresholds to evaluate
+    thresholds = np.linspace(0, max(max_pos_dist, max_neg_dist), 1000)
     best_threshold, best_accuracy = 0, 0
     pos_acc, neg_acc = 0, 0
+    
     print(f"Evaluating {len(positive_distances)} positive and {len(negative_distances)} negative distances.")
     
+    # Evaluate thresholds
     for threshold in thresholds:
         positive_correct = positive_distances < threshold
         negative_correct = negative_distances >= threshold
         
-        # Accuracy
+        # Compute accuracy metrics
         accuracy = (positive_correct.sum() + negative_correct.sum()) / (len(positive_distances) + len(negative_distances))
         pos_accuracy = positive_correct.sum() / len(positive_distances)
         neg_accuracy = negative_correct.sum() / len(negative_distances)
@@ -324,25 +339,29 @@ def find_threshold(model_path, data_path):
     print(f"Best accuracy: {acc:.4f} with threshold: {thresh:.4f}")
     print(f"Positive accuracy: {pos_acc:.4f}, Negative accuracy: {neg_acc:.4f}")
 
-def save_embeddings(model_path, data_path):
+def save_embeddings(model_path, data_path, output_name):
     """Function to get embeddings"""
     model = load_model(model_path, True)
     data = get_people_paths(data_path)
-    embeddings = {}
-    paths, ank = [], []
+    embedding_map = {}
+    paths, images = [], []
 
     for image_paths in data.values():
-        for anchor in image_paths:
-            anchor_img = load_image(anchor)
-            paths.append(anchor)
-            ank.append(anchor_img)
+        for img_path in image_paths:
+            img = load_image(img_path)
+            paths.append(img_path)
+            images.append(img)
 
-    anchor_embedding = model.predict([np.array(ank), np.array(ank), np.array(ank)])
+    embeddings = model.predict([np.array(images)])
     for i, path in enumerate(paths):
-        embeddings[path] = anchor_embedding[i].tolist()
+        key = "/".join(path.split("/")[-2:])
+        embedding_map[key] = embeddings[i].tolist()
     
-    with open('data/json/db.json', 'w') as file:
-        json.dump(embeddings, file, indent=4)
+    with open(f'data/pickle/{output_name}.pkl', 'wb') as file:
+        pickle.dump(data, file)
+
+    with open(f'data/json/{output_name}.json', 'w') as file:
+        json.dump(data, file, indent=4)
 
 def add_embedding(model, data_path):
     """Function to add embeddings"""
@@ -394,7 +413,18 @@ def recognize(model, img_path):
     if same[0]:
         shutil.copy(same[0], f'data/compared/recognition/{name}/same_{same[1]}.jpg')
 
-
+def create_subset(data_path, output_path):
+    """Function to create a subset of the data"""
+    people = os.listdir(data_path)
+    os.makedirs(output_path, exist_ok=True)
+    for person in people:
+        person_path = os.path.join(data_path, person)
+        person_target_path = os.path.join(output_path, person)
+        os.makedirs(person_target_path, exist_ok=True)
+        for i, image in enumerate(os.scandir(person_path)):
+            if i < 5:
+                target_path = os.path.join(person_target_path, image.name)
+                shutil.copy(image.path, target_path)
 
 def parse_args():
     """Parse command-line arguments."""
@@ -432,12 +462,18 @@ def parse_args():
     embedding_parser = subparsers.add_parser("embedding")
     embedding_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
     embedding_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    embedding_parser.add_argument("--output", "-o", type=str, default="database", help="Name of the output file")
     embedding_parser.set_defaults(func=embedding_handler)
 
     recognize_parser = subparsers.add_parser("recognize")
     recognize_parser.add_argument("--model", "-m", type=str, required=True, help="Path to the model")
     recognize_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
     recognize_parser.set_defaults(func=recognize_handler)
+
+    subset_parser = subparsers.add_parser("subset")
+    subset_parser.add_argument("--data", "-d", type=str, default="data/images/test", help="Path to the dataset")
+    subset_parser.add_argument("--output", "-o", type=str, default="data/subset", help="Path to the output directory")
+    subset_parser.set_defaults(func=subset_handler)
     
     return parser.parse_args()
 
@@ -459,11 +495,15 @@ def threshold_handler(args):
 
 def embedding_handler(args):
     """Handler for the embedding command."""
-    save_embeddings(args.model, args.data)
+    save_embeddings(args.model, args.data, args.output)
 
 def recognize_handler(args):
     """Handler for the recognize command."""
     recognize(args.model, args.data)
+
+def subset_handler(args):
+    """Handler for the subset command."""
+    create_subset(args.data, args.output)
 
 if __name__ == '__main__':
     args = parse_args()
