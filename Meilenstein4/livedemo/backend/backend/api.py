@@ -55,7 +55,7 @@ def api_recognize():
     # Check for the 'recognize' query parameter -> Default to 'false' if not provided
     if recognize_param == 'true':
         closest, furthest = ml_manager.recognize(embedding)
-        if save_on_recognize:
+        if save_on_recognize == 'true':
             save_embedding(embedding, name)
         return jsonify({"message": "Image uploaded and saved successfully", "closest": closest, "furthest": furthest}), 200
     else:
@@ -94,7 +94,7 @@ def save_image(image, recognize_param):
     image.save(image_path)
 
     # if image is used for recognition, save it as reference for web frontend
-    if recognize_param:
+    if recognize_param == 'true':
         for node in os.scandir("images"):
             if "reference" in node.name and node.is_file():
                 os.remove(node.path)
