@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import json
+import os
 
 THRESHOLD = 1.0222
 
@@ -78,6 +79,11 @@ class MLManager:
 
     def __init__(self):
         self.model = self.load_model('model.keras')
+        if os.path.exists('db.json'):
+            with open('db.json', 'r') as file:
+                self.embeddings = json.load(file)
+        else:
+            self.embeddings = {}
 
     def load_model(self, path):
         return tf.keras.models.load_model(
@@ -88,16 +94,12 @@ class MLManager:
     def calc_embedding(self, path):
         img = np.array([load_image(path)])
         embedding = self.model.predict(img)
-        print(embedding)
         return embedding
 
     def recognize(self, embedding, n=5):
         """Function to recognize people"""
-        with open('db.json', 'r') as file:
-            embeddings = json.load(file)
-
         distances = []
-        for path, emb in embeddings.items():
+        for path, emb in self.embeddings.items():
             distance = calc_distance(embedding, np.array(emb))[0]
             distances.append({
                 "distance": float(distance),

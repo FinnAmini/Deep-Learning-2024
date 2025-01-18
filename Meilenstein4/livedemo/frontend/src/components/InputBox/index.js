@@ -1,32 +1,81 @@
-import React, { useState } from "react";
+import React, {useEffect, useState} from "react";
 import styles from "./styles.module.css";
 
 const InputBox = ({ loadData, setLoading }) => {
+    const USE_WEBAPP_INPUT = false;
+
     const [image, setImage] = useState(null);
     const [isHovering, setIsHovering] = useState(false);
+    const [reference, setReference] = useState(null);
+
+    useEffect(() => {
+        let fetch_image = async reference => {
+            console.log(reference)
+            try {
+                const response = await fetch(`http://localhost:5000/api/recognize_img?image=${reference}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    loadData(data);
+                }
+            } catch (error) {
+                console.error("Error uploading image:", error);
+            }
+        }
+
+        if (!USE_WEBAPP_INPUT && reference) {
+            fetch_image(reference)
+        }
+    }, [reference]);
+
+    useEffect(() => {
+        if (!USE_WEBAPP_INPUT) {
+            const interval = setInterval(fetchRefferenceImage, 1000);
+            return () => clearInterval(interval);
+        }
+    }, []);
+
+    let fetchRefferenceImage = async (data) => {
+        try {
+            const response = await fetch("http://localhost:5000/api/reference");
+            if (response.ok) {
+                const data = await response.json();
+                if (data['ref_image']) {
+                    console.log('data received')
+                    setImage(`http://localhost:5000/images/${data.ref_image}`)
+                    setReference(data['ref_image']);
+                }
+            }
+        } catch (error) {
+            console.error("Error uploading image:", error);
+        }
+    }
 
     const handleDragOver = (event) => {
         event.preventDefault();
-        setIsHovering(true);
+        if (USE_WEBAPP_INPUT)
+            setIsHovering(true);
     };
 
     const handleDragLeave = () => {
-        setIsHovering(false);
+        if (USE_WEBAPP_INPUT)
+            setIsHovering(false);
     };
 
     const handleDrop = (event) => {
         event.preventDefault();
-        setIsHovering(false);
-        setLoading(true);
+        if (USE_WEBAPP_INPUT) {
+            setIsHovering(false);
+            setLoading(true);
 
-        const file = event.dataTransfer.files[0];
-        if (file && file.type.startsWith("image/")) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                setImage(reader.result);
-                uploadImage(file);
-            };
-            reader.readAsDataURL(file);
+            const file = event.dataTransfer.files[0];
+            if (file && file.type.startsWith("image/")) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    setImage(reader.result);
+                    uploadImage(file);
+                };
+                reader.readAsDataURL(file);
+            }
         }
     };
 
@@ -35,7 +84,7 @@ const InputBox = ({ loadData, setLoading }) => {
         formData.append("image", file);
 
         try {
-            const response = await fetch("http://localhost:5000/api/recognize", {
+            const response = await fetch("http://localhost:5000/api/recognize?recognize=true", {
                 method: "POST",
                 body: formData,
             });
@@ -82,7 +131,7 @@ const InputBox = ({ loadData, setLoading }) => {
                             textAlign: "center",
                         }}
                     >
-                        Drag and drop an image here
+                        {USE_WEBAPP_INPUT && 'Drag and drop an image here'}
                     </div>
                 )}
             </div>

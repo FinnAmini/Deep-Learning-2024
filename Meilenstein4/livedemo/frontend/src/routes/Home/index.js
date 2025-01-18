@@ -1,10 +1,10 @@
-import React, {useState, useEffect} from "react";
+import React, {useState} from "react";
 import InputBox from "../../components/InputBox";
 import ImageBox from "../../components/ImageBox";
 import LoadingCircle from "../../components/LoadingCircle";
+import styles from "./styles.module.css";
 
 const Home = () => {
-
     const [similar, setSimilar] = useState([]);
     const [different, setDifferent] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -14,15 +14,6 @@ const Home = () => {
         setDifferent(data.furthest.sort((a, b) => b.distance - a.distance))
         setLoading(false);
     }
-
-    let fetchRefferenceImage = async (data) => {
-        console.log('fetchiong backen data...')
-    }
-
-    useEffect(() => {
-        const interval = setInterval(fetchRefferenceImage, 1000);
-        return () => clearInterval(interval);
-    }, []);
 
     return (
         <div className="flex flex-col items-center">
