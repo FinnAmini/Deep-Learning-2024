@@ -75,9 +75,10 @@ def build_embedding(input_shape, base_model):
         )
         # remove top layers
         base_model = Model(base_model.input, base_model.layers[-13].output)
-        base_model.trainable = False
+        base_model.trainable = True
         x = BatchNormalization()(base_model.output)
         x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+        x = BatchNormalization()(x)
         x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
         embedding = Model(base_model.input, x)
         embedding.summary()
@@ -373,7 +374,6 @@ def find_threshold(model_path, data_path):
     print(f"Best accuracy: {acc:.4f} with threshold: {thresh:.4f}")
     print(f"Positive accuracy: {pos_acc:.4f}, Negative accuracy: {neg_acc:.4f}")
 
-def save_embeddings(model_path, data_path, output_name):
 def save_embeddings(model_path, data_path, output_name):
     """Function to get embeddings"""
     model = load_model(model_path, True)
