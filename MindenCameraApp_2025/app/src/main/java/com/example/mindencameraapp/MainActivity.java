@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -31,6 +32,13 @@ import com.google.common.util.concurrent.ListenableFuture;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.support.image.ImageProcessor;
+import org.tensorflow.lite.support.image.TensorImage;
+import org.tensorflow.lite.support.image.ops.ResizeOp;
+import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp;
+import org.tensorflow.lite.support.image.ops.Rot90Op;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -63,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
     private ImageCapture imageCapture;
     private int currentCamera = CameraSelector.LENS_FACING_FRONT;
     private ImageButton buttonSwitchCamera;
+    private View glowOverlay;
 
 
     ImageButton buttonTakePicture;
@@ -80,11 +89,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        glowOverlay = findViewById(R.id.glowOverlay);
+
         classificationResults = findViewById(R.id.classificationResults);
         buttonTakePicture = findViewById(R.id.buttonCapture);
-        buttonTakePicture.setOnClickListener(v -> captureImage(false));
+        buttonTakePicture.setOnClickListener(v -> captureImage(true));
         buttonGallery = findViewById(R.id.buttonGallery);
-        buttonGallery.setOnClickListener(v -> captureImage(true));
+        buttonGallery.setOnClickListener(v -> captureImage(false));
 
         previewView = findViewById(R.id.previewView);
 
@@ -100,6 +111,27 @@ public class MainActivity extends AppCompatActivity {
 
         // Check permissions and start camera if all permissions are granted
         checkPermissions();
+    }
+
+    private void showGlowEffect(boolean isRecognized) {
+        // Apply the appropriate drawable
+        if (isRecognized) {
+            glowOverlay.setBackgroundResource(R.drawable.glow_green);
+        } else {
+            glowOverlay.setBackgroundResource(R.drawable.glow_red);
+        }
+
+        // Make the overlay visible and add a fade-in animation
+        glowOverlay.setVisibility(View.VISIBLE);
+        glowOverlay.setAlpha(0f);
+        glowOverlay.animate().alpha(1f).setDuration(500).start();
+
+        // Hide the overlay after a delay
+        glowOverlay.postDelayed(() -> {
+            glowOverlay.animate().alpha(0f).setDuration(500).withEndAction(() -> {
+                glowOverlay.setVisibility(View.GONE);
+            }).start();
+        }, 2000); // Show for 2 seconds
     }
 
     private boolean allPermissionsGranted() {
@@ -170,8 +202,23 @@ public class MainActivity extends AppCompatActivity {
         Bitmap bitmapImage = BitmapFactory.decodeByteArray(arr, 0, buffer.capacity());
         imageProxy.close();
 
+        int width  = bitmapImage.getWidth();
+        int height = bitmapImage.getHeight();
+        // image size set to 224x224 (use bilinear interpolation)
+        int size = height > width ? width : height;
+        ImageProcessor imageProcessor = new ImageProcessor.Builder()
+                .add(new Rot90Op(1))
+                .add(new ResizeWithCropOrPadOp(size, size))
+                .add(new ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
+                .build();
+        TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
+        tensorImage.load(bitmapImage);
+        tensorImage = imageProcessor.process(tensorImage);
+        // Convert processed TensorImage back to Bitmap
+        Bitmap processedBitmap = tensorImage.getBitmap();
+
         // Send the image to the backend
-        sendImage(bitmapImage, recognize);
+        sendImage(processedBitmap, recognize);
     }
 
     private void sendImage(Bitmap bitmap, Boolean recognize) {
@@ -202,12 +249,15 @@ public class MainActivity extends AppCompatActivity {
                                 JSONArray closestArray = jsonResponse.optJSONArray("closest");
                                 if (closestArray != null && closestArray.length() > 0) {
                                     JSONObject closestObject = closestArray.getJSONObject(0);
+                                    double distance = closestObject.optDouble("distance", -1.0);
                                     boolean recognized = closestObject.optBoolean("recognized", false);
 
                                     if (recognized) {
-                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition successful: " + message, Toast.LENGTH_LONG).show());
+                                        showGlowEffect(true);
+                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition successful! Distance: " + distance, Toast.LENGTH_LONG).show());
                                     } else {
-                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition failed: No matches found.", Toast.LENGTH_LONG).show());
+                                        showGlowEffect(false);
+                                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition failed. Distance: " + distance, Toast.LENGTH_LONG).show());
                                     }
                                 } else {
                                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Recognition failed: No data received.", Toast.LENGTH_LONG).show());
