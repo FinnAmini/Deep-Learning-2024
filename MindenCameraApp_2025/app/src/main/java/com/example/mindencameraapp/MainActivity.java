@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -62,6 +63,8 @@ import retrofit2.http.Multipart;
 import retrofit2.http.POST;
 import retrofit2.http.Part;
 import retrofit2.http.Query;
+
+import android.net.Uri;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -196,14 +199,27 @@ public class MainActivity extends AppCompatActivity {
     private void sendImageToBackend(@NonNull ImageProxy imageProxy, Boolean recognize) {
         Log.d("Debug", "Pressing button 1...");
 
+        int rotationDegrees;
+        if (currentCamera == CameraSelector.LENS_FACING_BACK) {
+            rotationDegrees = 180;
+        } else {
+            rotationDegrees = 0;
+        }
+
         ByteBuffer buffer = imageProxy.getPlanes()[0].getBuffer();
         byte[] arr = new byte[buffer.remaining()];
         buffer.get(arr);
         Bitmap bitmapImage = BitmapFactory.decodeByteArray(arr, 0, buffer.capacity());
         imageProxy.close();
 
-        int width  = bitmapImage.getWidth();
-        int height = bitmapImage.getHeight();
+        // Rotate the bitmap based on rotationDegrees
+        Matrix matrix = new Matrix();
+        matrix.postRotate(rotationDegrees);
+        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmapImage, 0, 0,
+                bitmapImage.getWidth(), bitmapImage.getHeight(), matrix, true);
+
+        int width  = rotatedBitmap.getWidth();
+        int height = rotatedBitmap.getHeight();
         // image size set to 224x224 (use bilinear interpolation)
         int size = height > width ? width : height;
         ImageProcessor imageProcessor = new ImageProcessor.Builder()
@@ -212,13 +228,46 @@ public class MainActivity extends AppCompatActivity {
                 .add(new ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
                 .build();
         TensorImage tensorImage = new TensorImage(DataType.FLOAT32);
-        tensorImage.load(bitmapImage);
+        tensorImage.load(rotatedBitmap);
         tensorImage = imageProcessor.process(tensorImage);
         // Convert processed TensorImage back to Bitmap
         Bitmap processedBitmap = tensorImage.getBitmap();
 
         // Send the image to the backend
         sendImage(processedBitmap, recognize);
+    }
+
+    private void saveImageToLocalStorage(Bitmap bitmap) {
+        FileOutputStream outStream = null;
+        try {
+            // Get the Pictures directory
+            File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+            if (!storageDir.exists()) {
+                storageDir.mkdirs();
+            }
+            // Create a file for the processed image
+            String fileName = "processed_image_" + System.currentTimeMillis() + ".png";
+            File imageFile = new File(storageDir, fileName);
+            // Write the bitmap to the file
+            outStream = new FileOutputStream(imageFile);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, outStream);
+            outStream.flush();
+            Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            Uri contentUri = Uri.fromFile(imageFile);
+            mediaScanIntent.setData(contentUri);
+            sendBroadcast(mediaScanIntent);
+            Log.d("Debug", "Image saved to: " + imageFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e("Debug", "Error saving image", e);
+        } finally {
+            if (outStream != null) {
+                try {
+                    outStream.close();
+                } catch (IOException e) {
+                    Log.e("Debug", "Error closing output stream", e);
+                }
+            }
+        }
     }
 
     private void sendImage(Bitmap bitmap, Boolean recognize) {
