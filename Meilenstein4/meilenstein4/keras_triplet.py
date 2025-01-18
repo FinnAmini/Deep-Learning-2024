@@ -23,7 +23,7 @@ from keras.preprocessing.image import load_img
 from collections import defaultdict
 import json
 import shutil
-import pickle
+import sys
 
 def calc_distance(anchor, reference):
     """Calculates the distance between the anchor and the reference embeddings."""
@@ -39,26 +39,57 @@ class DistanceLayer(layers.Layer):
         an_distance = calc_distance(anchor, negative)
         return (ap_distance, an_distance)
 
-def build_embedding(input_shape):
+def build_embedding(input_shape, base_model):
     """Builds the embedding network."""
-    base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
-    base_model.trainable = True  
-    x = Flatten()(base_model.output)
-    x = BatchNormalization()(x)
-    x = Dense(256, activation="relu")(x)
-    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
-    x = BatchNormalization()(x)
-    x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
-    embedding = Model(base_model.input, x)
-    return embedding
+    embedding = False
+    if base_model is None:
+        print("Loading ResNet50 model")
+        base_model = ResNet50(weights="imagenet", include_top=False, input_shape=input_shape)
+        base_model.trainable = True  
+        x = Flatten()(base_model.output)
+        x = BatchNormalization()(x)
+        x = Dense(256, activation="relu")(x)
+        x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+        x = BatchNormalization()(x)
+        x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
+        embedding = Model(base_model.input, x)
+        return embedding
+    else:
+        print("Loading ms2 model")
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+        from Meilenstein2.deep_learning.train import (
+            custom_age_loss,
+            custom_gender_loss,
+            custom_age_metric,
+            custom_gender_metric,
+        )
+        base_model = tf.keras.models.load_model(
+            base_model,
+            custom_objects={
+                "BinaryCrossentropy": tf.keras.losses.BinaryCrossentropy,
+                "custom_age_loss": custom_age_loss,
+                "custom_gender_loss": custom_gender_loss,
+                "custom_age_metric": custom_age_metric,
+                "custom_gender_metric": custom_gender_metric,
+            },
+        )
+        # remove top layers
+        base_model = Model(base_model.input, base_model.layers[-13].output)
+        base_model.trainable = False
+        x = BatchNormalization()(base_model.output)
+        x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+        x = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=-1))(x)
+        embedding = Model(base_model.input, x)
+        embedding.summary()
+        return embedding
 
 
-def build_model(input_shape):
+def build_model(input_shape, base_model):
     """Builds the Siamese network model."""
     anchor_input = layers.Input(name="anchor", shape=input_shape)
     positive_input = layers.Input(name="positive", shape=input_shape)
     negative_input = layers.Input(name="negative", shape=input_shape)
-    embedding = build_embedding(input_shape)
+    embedding = build_embedding(input_shape, base_model)
 
     a = embedding(anchor_input),
     b = embedding(positive_input)
@@ -82,9 +113,9 @@ class SiameseModel(Model):
        L(A, P, N) = max(‖f(A) - f(P)‖² - ‖f(A) - f(N)‖² + margin, 0)
     """
 
-    def __init__(self, siamese_network=None, margin=0.5, **kwargs):
+    def __init__(self, siamese_network=None, margin=0.2, base_model=None, **kwargs):
         super().__init__()
-        siamese, embedding = build_model((224, 224, 3))
+        siamese, embedding = build_model((224, 224, 3), base_model)
         self.siamese_network = siamese
         self.embedding = embedding 
         self.margin = margin
@@ -94,6 +125,9 @@ class SiameseModel(Model):
 
     def set_use_embedding(self, use):
         self.use_embedding = use
+
+    def set_model(self, model):
+        self.siamese_network = model
 
     def call(self, inputs):
         if self.use_embedding:
@@ -151,8 +185,8 @@ class SiameseModel(Model):
         return [self.loss_tracker, self.accuracy_tracker]
 
 
-def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.0001):
-    siamese_model = SiameseModel(margin=margin)
+def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.00001, base_model=None):
+    siamese_model = SiameseModel(margin=margin, base_model=base_model)
     siamese_model.compile(optimizer=tf.keras.optimizers.Adam(lr))
 
     train_log_dir = (f"logs/triplet/model_{name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
@@ -340,9 +374,12 @@ def find_threshold(model_path, data_path):
     print(f"Positive accuracy: {pos_acc:.4f}, Negative accuracy: {neg_acc:.4f}")
 
 def save_embeddings(model_path, data_path, output_name):
+def save_embeddings(model_path, data_path, output_name):
     """Function to get embeddings"""
     model = load_model(model_path, True)
     data = get_people_paths(data_path)
+    embedding_map = {}
+    paths, images = [], []
     embedding_map = {}
     paths, images = [], []
 
@@ -351,17 +388,16 @@ def save_embeddings(model_path, data_path, output_name):
             img = load_image(img_path)
             paths.append(img_path)
             images.append(img)
+        for img_path in image_paths:
+            img = load_image(img_path)
+            paths.append(img_path)
+            images.append(img)
 
-    embeddings = model.predict([np.array(images)])
+    print(img_path)
+    embeddings = model.predict(np.array(images))
     for i, path in enumerate(paths):
         key = "/".join(path.split("/")[-2:])
         embedding_map[key] = embeddings[i].tolist()
-    
-    with open(f'data/pickle/{output_name}.pkl', 'wb') as file:
-        pickle.dump(data, file)
-
-    with open(f'data/json/{output_name}.json', 'w') as file:
-        json.dump(data, file, indent=4)
 
 def add_embedding(model, data_path):
     """Function to add embeddings"""
@@ -440,6 +476,7 @@ def parse_args():
     train_parser.add_argument("--name", "-n", type=str, default="model_triplet.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
     train_parser.add_argument("--learning_rate", "-lr", type=float, default=0.0001, help="Learning rate")
+    train_parser.add_argument("--base_model", "-bm", type=str, default=None, help="Path to the base model")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
     train_parser.set_defaults(func=train_handler)
 
@@ -479,7 +516,7 @@ def parse_args():
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.learning_rate)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.learning_rate, args.base_model)
 
 def test_handler(args):
     """Handler for the test command."""
