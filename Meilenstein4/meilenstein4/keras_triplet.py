@@ -143,11 +143,6 @@ class SiameseModel(Model):
         gradients = tape.gradient(loss, self.siamese_network.trainable_weights)
         self.optimizer.apply_gradients(zip(gradients, self.siamese_network.trainable_weights))
 
-        # Applying the gradients on the model using the specified optimizer
-        self.optimizer.apply_gradients(
-            zip(gradients, self.siamese_network.trainable_weights)
-        )
-
         # Let's update and return the training loss metric.
 
         # print('\n\n##############')
