@@ -75,7 +75,7 @@ def build_embedding(input_shape, base_model):
         )
         # remove top layers
         base_model = Model(base_model.input, base_model.layers[-13].output)
-        base_model.trainable = True
+        base_model.trainable = False
         x = BatchNormalization()(base_model.output)
         x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
         x = BatchNormalization()(x)
@@ -186,11 +186,22 @@ class SiameseModel(Model):
         return [self.loss_tracker, self.accuracy_tracker]
 
 
-def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.00001, base_model=None):
-    siamese_model = SiameseModel(margin=margin, base_model=base_model)
-    siamese_model.compile(optimizer=tf.keras.optimizers.Adam(lr))
+def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.00001, base_model=None, resume_from=None):
+    # Load model from checkpoint if resume_from is specified
+    if resume_from:
+        print(f"Resuming training from checkpoint: {resume_from}")
+        siamese_model = tf.keras.models.load_model(
+            resume_from,
+            custom_objects={"SiameseModel": SiameseModel, "DistanceLayer": DistanceLayer}
+        )
+    else:
+        print("Starting training from scratch.")
+        siamese_model = SiameseModel(margin=margin, base_model=base_model)
+        siamese_model.compile(optimizer=tf.keras.optimizers.Adam(lr))
 
-    train_log_dir = (f"logs/triplet/model_{name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    # Adjust log directory for continuation
+    timestamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    train_log_dir = f"logs/triplet/model_{name}_{timestamp}"
     tensorboard_train_callback = tf.keras.callbacks.TensorBoard(log_dir=train_log_dir, histogram_freq=1)
 
     checkpoint_dir = './checkpoints/triplet'
@@ -204,9 +215,30 @@ def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.00001, ba
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs('models/triplet', exist_ok=True)
 
+    # Create data loaders
     dataloaders = create_dataloader(data_path, batch_size=batch_size, val_split=val_split)
-    siamese_model.fit(dataloaders[0], validation_data=dataloaders[1], epochs=epochs, callbacks=[tensorboard_train_callback, checkpoint_callback])
+
+    # Determine starting epoch for resuming
+    initial_epoch = 0
+    if resume_from:
+        # Extract initial epoch from checkpoint file name
+        try:
+            initial_epoch = int(resume_from.split('_epoch_')[1].split('_')[0])
+            print(f"Resuming from epoch {initial_epoch}")
+        except IndexError:
+            print("Unable to parse epoch number from checkpoint. Starting from epoch 0.")
+
+    # Train the model
+    siamese_model.fit(
+        dataloaders[0],
+        validation_data=dataloaders[1],
+        epochs=epochs,
+        steps_per_epoch=dataloaders[2],
+        initial_epoch=initial_epoch,  # Start from the right epoch
+        callbacks=[tensorboard_train_callback, checkpoint_callback]
+    )
     siamese_model.save(f"models/triplet/{name}")
+
 
 def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
     """Predicts and visualizes the data."""
@@ -475,9 +507,10 @@ def parse_args():
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--name", "-n", type=str, default="model_triplet.keras", help="Output model file")
     train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
-    train_parser.add_argument("--learning_rate", "-lr", type=float, default=0.0001, help="Learning rate")
+    train_parser.add_argument("--learning_rate", "-lr", type=float, default=0.00001, help="Learning rate")
     train_parser.add_argument("--base_model", "-bm", type=str, default=None, help="Path to the base model")
     train_parser.add_argument("-val_split", type=float, default=0.2, help="Validation split")
+    train_parser.add_argument("--resume_from", "-rf", type=str, default=None, help="Path to a checkpoint to resume training")
     train_parser.set_defaults(func=train_handler)
 
     test_parser = subparsers.add_parser("test")
@@ -516,7 +549,8 @@ def parse_args():
 
 def train_handler(args):
     """Handler for the train command."""
-    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.learning_rate, args.base_model)
+    train(args.data, args.batch_size, args.epochs, args.margin, args.name, args.val_split, args.learning_rate, args.base_model, args.resume_from)
+
 
 def test_handler(args):
     """Handler for the test command."""

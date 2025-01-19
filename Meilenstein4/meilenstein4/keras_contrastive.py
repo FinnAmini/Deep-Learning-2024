@@ -218,7 +218,7 @@ def parse_args():
     train_parser.add_argument("--batch_size", "-b", type=int, default=32, help="Batch size")
     train_parser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs")
     train_parser.add_argument("--name", "-n", type=str, default="model.keras", help="Output model file")
-    train_parser.add_argument("--margin", "-m", type=float, default=0.2, help="Margin for contrastive loss")
+    train_parser.add_argument("--margin", "-m", type=float, default=1, help="Margin for contrastive loss")
     train_parser.add_argument("--visualize_data", "-v", action="store_true", help="Visualize the data")
     train_parser.add_argument("--evaluate", "-ev", action="store_true", help="Evaluate the model")
     train_parser.add_argument("--base_model", "-bm", type=str, default=None, help="Path to the base model")

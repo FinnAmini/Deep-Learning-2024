@@ -35,9 +35,17 @@ def create_triplets(root_dir):
     for label, image_paths in data.items():
         for anchor in image_paths:
             positive = random.choice([ip for ip in image_paths if ip != anchor])
+            positive2 = random.choice([ip for ip in image_paths if ip != anchor and ip != positive])
+            positive3 = random.choice([ip for ip in image_paths if ip != anchor and ip != positive and ip != positive2])
             negative_person = random.choice([i for i in range(len(people)) if i != label])
+            negative_person2 = random.choice([i for i in range(len(people)) if i != label and i != negative_person])
+            negative_person3 = random.choice([i for i in range(len(people)) if i != label and i != negative_person and i != negative_person2])
             negative = random.choice(data[negative_person])
+            negative2 = random.choice(data[negative_person2])
+            negative3 = random.choice(data[negative_person3])
             triplets.append((anchor, positive, negative))
+            triplets.append((anchor, positive2, negative2))
+            triplets.append((anchor, positive3, negative3))
 
     return triplets
 
@@ -73,11 +81,11 @@ def triplet_generator(triplets):
             load_image(negative),
         )
 
-def create_triplet_dataloader(triplets, img_width=224, img_height=224, batch_size=32):
+def create_triplet_dataloader(triplets, img_width=224, img_height=224, batch_size=32, repeat=False):
     """
-    Create a tf.data.Dataset from a triplet data generator.
+    Create a tf.data.Dataset from a triplet data generator with optional repetition.
     """
-    return tf.data.Dataset.from_generator(
+    dataset = tf.data.Dataset.from_generator(
         generator=lambda: triplet_generator(triplets),
         output_signature=(
             tf.TensorSpec(shape=(img_width, img_height, 3), dtype=tf.float32),  # Anchor
@@ -85,6 +93,12 @@ def create_triplet_dataloader(triplets, img_width=224, img_height=224, batch_siz
             tf.TensorSpec(shape=(img_width, img_height, 3), dtype=tf.float32),  # Negative
         ),
     ).shuffle(1000).batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+    if repeat:
+        dataset = dataset.repeat()  # Enable infinite repetition for training
+
+    return dataset
+
 
 def create_dataloader(root_dir, img_width=224, img_height=224, batch_size=32, val_split=0.2):
     """
@@ -98,6 +112,7 @@ def create_dataloader(root_dir, img_width=224, img_height=224, batch_size=32, va
         return create_triplet_dataloader(triplets, img_width, img_height, batch_size)
     else:
         train_triplets, val_triplets = split_triplets_by_person(triplets, val_split)
-        train_data = create_triplet_dataloader(train_triplets, img_width, img_height, batch_size)
-        val_data = create_triplet_dataloader(val_triplets, img_width, img_height, batch_size)
-        return train_data, val_data
+        steps_per_epch = len(train_triplets) // batch_size
+        train_data = create_triplet_dataloader(train_triplets, img_width, img_height, batch_size, repeat=True)
+        val_data = create_triplet_dataloader(val_triplets, img_width, img_height, batch_size, repeat=False)
+        return train_data, val_data, steps_per_epch

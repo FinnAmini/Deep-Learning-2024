@@ -36,13 +36,22 @@ def create_pairs(root_dir):
         for img_path in image_paths:
             # positive pair
             img_path2 = random.choice([ip for ip in image_paths if ip != img_path])
+            img_path3 = random.choice([ip for ip in image_paths if ip != img_path and ip != img_path2]) 
+            img_path4 = random.choice([ip for ip in image_paths if ip != img_path and ip != img_path2 and ip != img_path3])
             pairs.append((img_path.path, img_path2.path, 0))
+            pairs.append((img_path.path, img_path3.path, 0))
+            pairs.append((img_path.path, img_path4.path, 0))
 
             # negative pair
             label2 = random.choice([i for i in range(len(people)) if i != label])
+            label3 = random.choice([i for i in range(len(people)) if i != label and i != label2])
+            label4 = random.choice([i for i in range(len(people)) if i != label and i != label2 and i != label3])
             img_path2 = random.choice(data[label2])
+            img_path3 = random.choice(data[label3])
+            img_path4 = random.choice(data[label4])
             pairs.append((img_path.path, img_path2.path, 1))
-
+            pairs.append((img_path.path, img_path3.path, 1))
+            pairs.append((img_path.path, img_path4.path, 1))
     return pairs
 
 def split_pairs_by_person(pairs: List[Tuple[str, str, int]], val_split: float = 0.2):
