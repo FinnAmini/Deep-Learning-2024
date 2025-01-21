@@ -234,69 +234,127 @@ def train(data_path, batch_size, epochs, margin, name, val_split, lr=0.00001, ba
     )
     siamese_model.save(f"models/triplet/{name}")
 
+def _pred_and_visualize_triplet(model, anker_img, pos_imgs, neg_imgs, anker_path, pos_paths, neg_paths, id):
+    """
+    Predicts distances between the anchor, 3 positives, and 3 negatives, and visualizes the results.
 
-def _pred_and_visualize(model, anker_path, pos_path, neg_path, id):
-    """Predicts and visualizes the data."""
-    anker = load_image(anker_path)
-    pos = load_image(pos_path)
-    neg = load_image(neg_path)
+    Args:
+        model: The trained model.
+        anker_img: The anchor image as a NumPy array.
+        pos_imgs: A list of 3 positive images as NumPy arrays.
+        neg_imgs: A list of 3 negative images as NumPy arrays.
+        anker_path: Path to the anchor image.
+        pos_paths: List of paths to the positive images.
+        neg_paths: List of paths to the negative images.
+        id: Unique identifier for saving the result.
 
-    prediction = model.predict([
-        np.expand_dims(anker, axis=0),
-        np.expand_dims(pos, axis=0),
-        np.expand_dims(neg, axis=0)
-    ])
+    Returns:
+        Tuple containing the anchor-positive distances and anchor-negative distances.
+    """
+    # Prepare the inputs for the model prediction
+    batch_anker = np.expand_dims(anker_img, axis=0)  # Shape: (1, height, width, channels)
+    
+    # Predict distances for each positive image
+    ap_distances = []
+    for pos_img in pos_imgs:
+        batch_pos = np.expand_dims(pos_img, axis=0)
+        batch_neg = np.expand_dims(neg_imgs[0], axis=0)  # Dummy negative input for shape consistency
+        prediction = model.predict([batch_anker, batch_pos, batch_neg])
 
-    ap, an = prediction[0][0], prediction[1][0]
+        # Extract anchor-positive distance
+        ap_distance = prediction[0][0].item()  # Anchor-Positive Distance
+        ap_distances.append(ap_distance)
 
-    # Display the images and prediction
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    # Predict distances for each negative image
+    an_distances = []
+    for neg_img in neg_imgs:
+        batch_neg = np.expand_dims(neg_img, axis=0)
+        batch_pos = np.expand_dims(pos_imgs[0], axis=0)  # Dummy positive input for shape consistency
+        prediction = model.predict([batch_anker, batch_pos, batch_neg])
+
+        # Extract anchor-negative distance
+        an_distance = prediction[1][0].item()  # Anchor-Negative Distance
+        an_distances.append(an_distance)
+
+    # Create a plot to visualize the anchor, 3 positives, and 3 negatives
+    fig, axes = plt.subplots(1, 7, figsize=(24, 4))  # 1 row, 7 columns (1 anchor + 3 positives + 3 negatives)
+    
+    # Anchor image
     axes[0].imshow(load_img(anker_path))
-    axes[0].set_title("Anker")
+    axes[0].set_title("Anchor")
     axes[0].axis("off")
+    
+    # Positive images
+    for i, (pos_path, distance) in enumerate(zip(pos_paths, ap_distances)):
+        axes[i + 1].imshow(load_img(pos_path))
+        axes[i + 1].set_title(f"{distance:.4f}", weight='bold', fontsize=20)
+        axes[i + 1].axis("off")
 
-    axes[1].imshow(load_img(pos_path))
-    axes[1].set_title("Positive")
-    axes[1].axis("off")
+    # Negative images
+    for i, (neg_path, distance) in enumerate(zip(neg_paths, an_distances)):
+        axes[i + 4].imshow(load_img(neg_path))
+        axes[i + 4].set_title(f"{distance:.4f}", weight='bold', fontsize=20)
+        axes[i + 4].axis("off")
 
-    axes[2].imshow(load_img(neg_path))
-    axes[2].set_title("Negative")
-    axes[2].axis("off")
+    # Set the main title for the whole figure
+    plt.suptitle(f"Triplet Evaluation", fontsize=16)
+    
+    # Save the figure
+    plt.savefig(f"data/eval/triplet/{id}_triplet_eval.png")
+    plt.close()  # Close the plot to avoid memory issues
 
-    plt.suptitle(f"AP: {ap:.4f}, AN: {an:.4f}, Good: {ap < an}", fontsize=16)
-    anker_name = "-".join(anker_path.split('/')[-2:])
-    pos_name = "-".join(pos_path.split('/')[-2:])
-    neg_name = "-".join(neg_path.split('/')[-2:])
-    plt.savefig(f"data/eval/triplet/{id}_{anker_name}###{pos_name}###{neg_name}.png")
-
-    return ap, an
+    return ap_distances, an_distances
 
 def evaluate_and_predict(model_path, data_path):
     """Evaluates the model and makes a prediction on a single example."""
     model = load_model(model_path)
     people_dirs = sorted(os.listdir(data_path))
 
-    total, good, ap_dist_sum, an_dist_sum = 0, 0, 0, 0 
+    total, good, ap_dist_sum, an_dist_sum = 0, 0, 0, 0
 
     for i in range(1000):
-        # positive example and anker
+        # Anchor and positive examples
         person1_dir = random.choice(people_dirs)
         person1_dir_path = os.path.join(data_path, person1_dir)
         anker_path = os.path.join(person1_dir_path, random.choice(os.listdir(person1_dir_path)))
-        pos_path = os.path.join(person1_dir_path, random.choice([i for i in os.listdir(person1_dir_path) if i != anker_path]))
-        person2_dir = random.choice([p for p in people_dirs if p != person1_dir])
-        person2_dir_path = os.path.join(data_path, person2_dir)
-        neg_path = os.path.join(person2_dir_path, random.choice(os.listdir(person2_dir_path)))
-        ap, an = _pred_and_visualize(model, anker_path, pos_path, neg_path, i)
-        total += 1
-        if ap < an:
-            good += 1
-        ap_dist_sum += ap
-        an_dist_sum += an
+
+        # Select 3 positive images from the same person
+        pos_paths = random.sample(
+            [os.path.join(person1_dir_path, img) for img in os.listdir(person1_dir_path) if img != anker_path],
+            k=3
+        )
+        pos_imgs = [load_image(pos_path) for pos_path in pos_paths]
+
+        # Select 3 negative images from other people
+        neg_paths = []
+        neg_imgs = []
+        for _ in range(3):
+            person2_dir = random.choice([p for p in people_dirs if p != person1_dir])
+            person2_dir_path = os.path.join(data_path, person2_dir)
+            neg_path = os.path.join(person2_dir_path, random.choice(os.listdir(person2_dir_path)))
+            neg_paths.append(neg_path)
+            neg_imgs.append(load_image(neg_path))
+
+        anker_img = load_image(anker_path)
+
+        # Perform prediction for the anchor, 3 positives, and 3 negatives
+        ap_distances, an_distances = _pred_and_visualize_triplet(
+            model, anker_img, pos_imgs, neg_imgs, anker_path, pos_paths, neg_paths, f"{i}_triplet"
+        )
+
+        # Evaluate accuracy
+        for ap_distance in ap_distances:
+            for an_distance in an_distances:
+                total += 1
+                if ap_distance < an_distance:
+                    good += 1
+
+        ap_dist_sum += sum(ap_distances)
+        an_dist_sum += sum(an_distances)
 
     print(f"Predicted {good} out of {total} examples correctly. - {good/total*100:.2f}%")
-    print(f"Avg. AP distance: {ap_dist_sum/good:.4f}")
-    print(f"Avg. AN distance: {an_dist_sum/good:.4f}")
+    print(f"Avg. AP distance: {ap_dist_sum/total:.4f}")
+    print(f"Avg. AN distance: {an_dist_sum/total:.4f}")
 
 def test(model_path, data_path, batch_size=32):
     """Tests the Siamese network model."""

@@ -152,7 +152,7 @@ def _pred_and_visualize(model, img1, img2, img1_path, img2_path, id):
     plt.suptitle(f"Prediction: {prediction[0][0]:.4f}", fontsize=16)
     img1_name = "-".join(img1_path.split('/')[-2:])
     img2_name = "-".join(img2_path.split('/')[-2:])
-    plt.savefig(f"data/eval/{id}_{img1_name}#####{img2_name}.png")
+    plt.savefig(f"data/eval/contrastive/{id}_{img1_name}#####{img2_name}.png")
 
     return round(prediction[0][0])
 
