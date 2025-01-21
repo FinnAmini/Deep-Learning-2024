@@ -5,7 +5,7 @@ from PIL import Image
 import json
 import os
 
-THRESHOLD = 0.9
+THRESHOLD = 0.7
 
 def calc_distance(anchor, reference):
     """Calculates the distance between the anchor and the reference embeddings."""
