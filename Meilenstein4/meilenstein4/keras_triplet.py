@@ -478,11 +478,12 @@ def save_embeddings(model_path, data_path, output_name):
             paths.append(img_path)
             images.append(img)
 
-    print(img_path)
     embeddings = model.predict(np.array(images))
     for i, path in enumerate(paths):
         key = "/".join(path.split("/")[-2:])
         embedding_map[key] = embeddings[i].tolist()
+    with open(f'data/json/{output_name}.json', 'w') as file:
+        json.dump(embedding_map, file, indent=4)
 
 def add_embedding(model, data_path):
     """Function to add embeddings"""
