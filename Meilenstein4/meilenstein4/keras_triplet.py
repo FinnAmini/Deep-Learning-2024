@@ -548,6 +548,50 @@ def create_subset(data_path, output_path):
                 shutil.copy(image.path, target_path)
 
 def parse_args():
+    """
+    Parse command-line arguments for different modes of operation.
+    The function supports the following modes:
+    - train: Train a model with specified parameters.
+        Arguments:
+            --data, -d: Path to the dataset (default: "data/images/train")
+            --img_width, -iw: Image width (default: 224)
+            --img_height, -ih: Image height (default: 224)
+            --batch_size, -b: Batch size (default: 32)
+            --epochs, -e: Number of epochs (default: 10)
+            --name, -n: Output model file (default: "model_triplet.keras")
+            --margin, -m: Margin for contrastive loss (default: 0.2)
+            --learning_rate, -lr: Learning rate (default: 0.0001)
+            --base_model, -bm: Path to the base model (default: None)
+            --val_split: Validation split (default: 0.2)
+    - test: Test a model with specified parameters.
+        Arguments:
+            --model, -m: Path to the model (required)
+            --data, -d: Path to the dataset (default: "data/images/test")
+            --batch_size, -b: Batch size (default: 32)
+    - eval: Evaluate and predict using a model.
+        Arguments:
+            --model, -m: Path to the model (required)
+            --data, -d: Path to the dataset (default: "data/images/test")
+    - threshold: Determine the threshold for a model.
+        Arguments:
+            --model, -m: Path to the model (required)
+            --data, -d: Path to the dataset (default: "data/images/test")
+    - embedding: Generate embeddings using a model.
+        Arguments:
+            --model, -m: Path to the model (required)
+            --data, -d: Path to the dataset (default: "data/images/test")
+            --output, -o: Name of the output file (default: "database")
+    - recognize: Recognize images using a model.
+        Arguments:
+            --model, -m: Path to the model (required)
+            --data, -d: Path to the dataset (default: "data/images/test")
+    - subset: Create a subset of the dataset.
+        Arguments:
+            --data, -d: Path to the dataset (default: "data/images/test")
+            --output, -o: Path to the output directory (default: "data/subset")
+    Returns:
+            argparse.Namespace: Parsed command-line arguments.
+    """
     """Parse command-line arguments."""
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)

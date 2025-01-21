@@ -207,6 +207,35 @@ def evaluate_and_predict(model_path, data_path):
     print(f"Predicted {pred_true} out of {total} images as same person. - {pred_true/total*100:.2f}%")
 
 def parse_args():
+    """
+    Parse command-line arguments.
+    Returns:
+        argparse.Namespace: Parsed command-line arguments.
+    The following subcommands are supported:
+    - train:
+        --data, -d (str): Path to the dataset (default: "data/images/train")
+        --img_width, -iw (int): Image width (default: 224)
+        --img_height, -ih (int): Image height (default: 224)
+        --batch_size, -b (int): Batch size (default: 32)
+        --epochs, -e (int): Number of epochs (default: 10)
+        --name, -n (str): Output model file (default: "model.keras")
+        --margin, -m (float): Margin for contrastive loss (default: 0.2)
+        --visualize_data, -v (flag): Visualize the data
+        --evaluate, -ev (flag): Evaluate the model
+        --base_model, -bm (str): Path to the base model (default: None)
+        -val_split (float): Validation split (default: 0.2)
+    - test:
+        --model, -m (str): Path to the model (required)
+        --data, -d (str): Path to the dataset (default: "data/images/test")
+        --batch_size, -b (int): Batch size (default: 32)
+    - eval:
+        --model, -m (str): Path to the model (required)
+        --data, -d (str): Path to the dataset (default: "data/images/test")
+    - verify:
+        --data, -d (str): Path to the dataset (default: "data/images/train")
+        --batch_size, -b (int): Batch size (default: 32)
+        --max_batches, -m (int): Maximum number of batches to verify (default: 1)
+    """
     """Parse command-line arguments."""
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
