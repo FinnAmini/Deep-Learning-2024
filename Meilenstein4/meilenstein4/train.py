@@ -28,7 +28,7 @@ def build_siamese_model(input_shape=(224, 224, 3)):
     # Klassifikation auf Basis der Distanz
     output = layers.Dense(1, activation='sigmoid')(distance)
 
-    model = models.Model(inputs=[input_1, input_2], outputs=output)
+    model = models.Model(inputs=(input_1, input_2), outputs=output)
     return model
 
 # Visualisierung des Trainingsverlaufs
